@@ -40,7 +40,6 @@ export default function ModelPage() {
   const [traceLinks, setTraceLinks] = useState<TraceLink[]>([]);
   const [drilledId, setDrilledId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('req');
   const [err, setErr] = useState('');
 
   const reload = useCallback(async () => {
@@ -121,161 +120,131 @@ export default function ModelPage() {
     setRelationships((prev) => [...prev, r]);
   }
 
-  async function moveElement(id: number, x: number, y: number) {
-    const e = elements.find((x) => x.id === id);
-    if (!e) return;
-    const updated = { ...e, posX: x, posY: y };
-    setElements((prev) => prev.map((it) => (it.id === id ? updated : it)));
+  function moveElement(id: number, x: number, y: number) {
+    setElements((prev) => prev.map((it) => (it.id === id ? { ...it, posX: x, posY: y } : it)));
+  }
+  async function commitElement(id: number, x: number, y: number) {
     await api.updateElement(id, { posX: x, posY: y });
   }
 
   const selectedElement = elements.find((e) => String(e.id) === selectedId) || null;
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const selectedEdge = relationships.find((r) => String(r.id) === selectedEdgeId) || null;
+  const [view, setView] = useState('canvas');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <div className="row" style={{ padding: 10, background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
-        <Link to="/" className="muted" style={{ textDecoration: 'none' }}>
-          ← 返回
-        </Link>
-        <strong>{project?.name || '…'}</strong>
-        <span className="muted" style={{ fontSize: 12 }}>{project?.description}</span>
-        <div className="grow" />
-        <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-          <button
-            className={drilledId === null ? 'active' : ''}
-            onClick={() => setDrilledId(null)}
-          >
-            Context
-          </button>
-          {breadcrumb.map((c) => (
-            <button
-              key={c.id}
-              className={drilledId === c.id ? 'active' : ''}
-              onClick={() => setDrilledId(c.id)}
-            >
-              {c.name}
-            </button>
-          ))}
-          {drilledElement && (
-            <span className="muted" style={{ fontSize: 12 }}>
-              ← 点击上面可返回外层
-            </span>
-          )}
-        </div>
-        <span className="muted" style={{ fontSize: 12 }}>当前层级：{LEVEL_NAME[viewLevel]}</span>
-        <span style={{ width: 8 }} />
-        {TYPES[viewLevel].map((t) => (
-          <button key={t} className="primary" onClick={() => addElement(t)}>
-            + {TYPE_LABEL[t]}
-          </button>
-        ))}
-      </div>
+    <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <nav className="nav">
+        <button className={view === 'canvas' ? 'active' : ''} onClick={() => setView('canvas')}>画布</button>
+        <button className={view === 'req' ? 'active' : ''} onClick={() => setView('req')}>需求</button>
+        <button className={view === 'proto' ? 'active' : ''} onClick={() => setView('proto')}>原型</button>
+        <button className={view === 'matrix' ? 'active' : ''} onClick={() => setView('matrix')}>追溯矩阵</button>
+        <button className={view === 'impact' ? 'active' : ''} onClick={() => setView('impact')}>影响分析</button>
+        <button className={view === 'ai' ? 'active' : ''} onClick={() => setView('ai')}>AI 与导出</button>
+      </nav>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {err && <div className="muted" style={{ color: '#dc2626', padding: '0 12px' }}>{err}</div>}
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div style={{ flex: 1 }}>
-          <C4Canvas
-            elements={visibleElements}
-            relationships={visibleRelationships}
-            onSelect={setSelectedId}
-            onSelectEdge={setSelectedEdgeId}
-            onAddEdge={addEdge}
-            onMoveElement={moveElement}
-          />
-        </div>
-        <aside style={{ width: 320, borderLeft: '1px solid #e5e7eb', background: '#fff', overflow: 'auto' }}>
-          {selectedEdge ? (
-            <EdgeInspector
-              edge={selectedEdge}
-              elements={elements}
-              onSave={async (e) => {
-                const updated = await api.updateRelationship(e.id, { ...e });
-                setRelationships((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
-                setSelectedEdgeId(String(updated && updated.id ? updated.id : e.id));
-              }}
-              onDelete={async (eid) => { await api.deleteRelationship(eid); setSelectedEdgeId(null); reload(); }}
-            />
-          ) : (
-            <Inspector
-              element={selectedElement}
-              canDrill={!!selectedElement && drillable(selectedElement)}
-              onDrill={() => selectedElement && setDrilledId(selectedElement.id)}
-              onAiDesign={async () => {
-                if (!selectedElement) return;
-                try {
-                  const r = await api.aiDesign(pid, { name: selectedElement.name, type: selectedElement.type, description: selectedElement.description });
-                  if (r.draft && r.draft.elements?.length) {
-                    const res = await api.aiApply(pid, r.draft);
-                    // eslint-disable-next-line no-alert
-                    alert(`AI 已生成该块的详细结构：${res.elements} 个元素、${res.relationships} 条关系`);
-                    reload();
-                  } else {
-                    // eslint-disable-next-line no-alert
-                    alert('AI 未识别出结构，请重试或检查 AI 配置');
-                  }
-                } catch (err: any) {
-                  // eslint-disable-next-line no-alert
-                  alert((err as Error).message || 'AI 设计失败');
-                }
-              }}
-              onSave={async (e) => {
-                const updated = await api.updateElement(e.id, { ...e });
-                const id = updated && updated.id ? updated.id : e.id;
-                setSelectedId(String(id));
-                setElements((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
-              }}
-              onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }}
-            />
-          )}
-        </aside>
-      </div>
+        {view === 'canvas' && (
+          <>
+            <div className="row" style={{ padding: 10, background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+              <Link to="/" className="muted" style={{ textDecoration: 'none' }}>← 返回</Link>
+              <strong>{project?.name || '…'}</strong>
+              <div className="grow" />
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                <button className={drilledId === null ? 'active' : ''} onClick={() => setDrilledId(null)}>Context</button>
+                {breadcrumb.map((c) => (
+                  <button key={c.id} className={drilledId === c.id ? 'active' : ''} onClick={() => setDrilledId(c.id)}>{c.name}</button>
+                ))}
+                {drilledElement && <span className="muted" style={{ fontSize: 12 }}>← 点面包屑返回外层</span>}
+              </div>
+              <span className="muted" style={{ fontSize: 12 }}>层级 {LEVEL_NAME[viewLevel]}</span>
+              <span style={{ width: 8 }} />
+              {TYPES[viewLevel].map((t) => (
+                <button key={t} className="primary" onClick={() => addElement(t)}>+ {TYPE_LABEL[t]}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1 }}>
+                <C4Canvas
+                  elements={visibleElements}
+                  relationships={visibleRelationships}
+                  drillable={drillable}
+                  onDrill={(id) => setDrilledId(id)}
+                  onSelect={setSelectedId}
+                  onSelectEdge={setSelectedEdgeId}
+                  onAddEdge={addEdge}
+                  onMoveElement={moveElement}
+                  onMoveElementCommit={commitElement}
+                />
+              </div>
+              <aside style={{ width: 320, borderLeft: '1px solid #e5e7eb', background: '#fff', overflow: 'auto' }}>
+                {selectedEdge ? (
+                  <EdgeInspector
+                    edge={selectedEdge}
+                    elements={elements}
+                    onSave={async (e) => {
+                      const updated = await api.updateRelationship(e.id, { ...e });
+                      setRelationships((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
+                      setSelectedEdgeId(String(updated && updated.id ? updated.id : e.id));
+                    }}
+                    onDelete={async (eid) => { await api.deleteRelationship(eid); setSelectedEdgeId(null); reload(); }}
+                  />
+                ) : (
+                  <Inspector
+                    element={selectedElement}
+                    onAiDesign={async () => {
+                      if (!selectedElement) return;
+                      try {
+                        const r = await api.aiDesign(pid, { name: selectedElement.name, type: selectedElement.type, description: selectedElement.description });
+                        if (r.draft && r.draft.elements?.length) {
+                          const res = await api.aiApply(pid, r.draft);
+                          // eslint-disable-next-line no-alert
+                          alert(`AI 已生成该块的详细结构：${res.elements} 个元素、${res.relationships} 条关系`);
+                          reload();
+                        } else {
+                          // eslint-disable-next-line no-alert
+                          alert('AI 未识别出结构，请重试或检查 AI 配置');
+                        }
+                      } catch (err: any) {
+                        // eslint-disable-next-line no-alert
+                        alert((err as Error).message || 'AI 设计失败');
+                      }
+                    }}
+                    onSave={async (e) => {
+                      const updated = await api.updateElement(e.id, { ...e });
+                      const id = updated && updated.id ? updated.id : e.id;
+                      setSelectedId(String(id));
+                      setElements((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
+                    }}
+                    onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }}
+                  />
+                )}
+              </aside>
+            </div>
+          </>
+        )}
 
-      <div className="tabs" style={{ height: 360, borderTop: '1px solid #e5e7eb', background: '#fff' }}>
-        <div className="tablist">
-          {[
-            ['req', '需求'],
-            ['proto', '原型'],
-            ['matrix', '追溯矩阵'],
-            ['impact', '影响分析'],
-            ['ai', 'AI 与导出'],
-          ].map(([k, label]) => (
-            <button key={k} className={activeTab === k ? 'active' : ''} onClick={() => setActiveTab(k)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="tabcontent">
-          {err && <div className="muted" style={{ color: '#dc2626', marginBottom: 8 }}>{err}</div>}
-          {activeTab === 'req' && (
-            <RequirementsTab
-              pid={pid}
-              requirements={requirements}
-              elements={elements.filter((e) => e.level === 2)}
-              traceLinks={traceLinks}
-              onChanged={reload}
-            />
-          )}
-          {activeTab === 'proto' && (
-            <PrototypesTab
-              pid={pid}
-              prototypes={prototypes}
-              containerElements={elements.filter((e) => e.level === 2)}
-              traceLinks={traceLinks}
-              onChanged={reload}
-            />
-          )}
-          {activeTab === 'matrix' && <MatrixTab pid={pid} />}
-          {activeTab === 'impact' && <ImpactTab pid={pid} elements={elements} requirements={requirements} />}
-          {activeTab === 'ai' && <AiTab pid={pid} elements={visibleElements} relationships={visibleRelationships} onApply={reload} />}
-        </div>
+        {view === 'req' && (
+          <div className="page">
+            <RequirementsTab pid={pid} requirements={requirements} elements={elements.filter((e) => e.level === 2)} traceLinks={traceLinks} onChanged={reload} />
+          </div>
+        )}
+        {view === 'proto' && (
+          <div className="page">
+            <PrototypesTab pid={pid} prototypes={prototypes} containerElements={elements.filter((e) => e.level === 2)} traceLinks={traceLinks} onChanged={reload} />
+          </div>
+        )}
+        {view === 'matrix' && <div className="page"><MatrixTab pid={pid} /></div>}
+        {view === 'impact' && <div className="page"><ImpactTab pid={pid} elements={elements} requirements={requirements} /></div>}
+        {view === 'ai' && <div className="page"><AiTab pid={pid} elements={visibleElements} relationships={visibleRelationships} onApply={reload} /></div>}
       </div>
     </div>
   );
 }
 
 // ---- Inspector ----
-function Inspector({ element, canDrill, onDrill, onAiDesign, onSave, onDelete }: { element: Element | null; canDrill: boolean; onDrill: () => void; onAiDesign: () => void; onSave: (e: Element) => void; onDelete: (id: number) => void }) {
+function Inspector({ element, onAiDesign, onSave, onDelete }: { element: Element | null; onAiDesign: () => void; onSave: (e: Element) => void; onDelete: (id: number) => void }) {
   const [form, setForm] = useState<Element | null>(null);
   useEffect(() => setForm(element), [element]);
   if (!element || !form)
@@ -308,11 +277,6 @@ function Inspector({ element, canDrill, onDrill, onAiDesign, onSave, onDelete }:
         <option value={3}>Component</option>
       </select>
       <div className="row" style={{ marginTop: 12, flexWrap: 'wrap', gap: 6 }}>
-        {canDrill && (
-          <button className="primary" onClick={onDrill}>
-            进入内部设计
-          </button>
-        )}
         <button onClick={onAiDesign}>AI 生成该块详细结构</button>
       </div>
       <div className="row" style={{ marginTop: 12 }}>
@@ -428,10 +392,21 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
   }
 
   const linksOf = (reqId: number) => traceLinks.filter((l) => l.fromType === 'requirement' && l.fromId === reqId);
+  const linked = new Set(requirements.map((r) => r.id).filter((rid) => linksOf(rid).length > 0));
+  const untraced = requirements.filter((r) => !linked.has(r.id));
 
   return (
-    <div className="grid2">
-      <div>
+    <div>
+      {untraced.length > 0 && (
+        <div className="panel" style={{ marginBottom: 12, borderLeft: '4px solid #f59e0b' }}>
+          <strong>有 {untraced.length} 条需求未关联任何元素（未被追溯）：</strong>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {untraced.map((r) => r.title).join('；')}
+          </span>
+        </div>
+      )}
+      <div className="grid2">
+        <div>
         <div className="row" style={{ marginBottom: 8 }}>
           <button onClick={() => setShowImport(!showImport)}>导入 Markdown</button>
           {showImport && (
@@ -500,6 +475,7 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
       <div className="panel muted" style={{ fontSize: 13 }}>
         <strong>说明</strong>
         <div>在容器视图下维护需求；每条需求可关联到某个容器元素，形成“需求 → 容器”的追溯。</div>
+      </div>
       </div>
     </div>
   );
