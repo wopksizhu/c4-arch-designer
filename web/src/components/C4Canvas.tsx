@@ -20,7 +20,6 @@ type C4NodeData = {
   description: string;
   elementType: string;
   drillable: boolean;
-  onDrill: (id: number) => void;
 };
 
 type C4NodeType = Node<C4NodeData, 'c4'>;
@@ -31,19 +30,32 @@ const kindLabel: Record<string, string> = {
   container: 'Container',
   component: 'Component',
 };
+const c4Cls: Record<string, string> = {
+  person: 'c4-person',
+  softwareSystem: 'c4-system',
+  container: 'c4-container',
+  component: 'c4-component',
+};
+
+// 模块级 drill 回调（避免把函数塞进 React Flow 的 node.data，那会导致 data 被序列化/克隆失败而变空）
+let drillHandler: ((id: number) => void) | null = null;
 
 function C4Node({ data, id }: NodeProps<C4NodeType>) {
+  const kind = data?.elementType ? kindLabel[data.elementType] || data.elementType : '';
+  const cls = data?.elementType ? c4Cls[data.elementType] || '' : '';
+  // 兜底：即使 data 异常也显示元素 id，绝不出现空白框
+  const label = data?.label || `#${id}`;
   return (
-    <div className={`c4-node c4-${data.elementType}`}>
-      <div className="kind">{kindLabel[data.elementType] || data.elementType}</div>
-      <div className="name">{data.label}</div>
-      {data.description ? <div className="desc">{data.description}</div> : null}
-      {data.drillable && (
+    <div className={`c4-node ${cls}`}>
+      <div className="kind">{kind}</div>
+      <div className="name">{label}</div>
+      {data?.description ? <div className="desc">{data.description}</div> : null}
+      {data?.drillable && (
         <button
           className="c4-drill"
           onClick={(e) => {
             e.stopPropagation();
-            data.onDrill(Number(id));
+            drillHandler && drillHandler(Number(id));
           }}
         >
           进入
@@ -80,6 +92,9 @@ export default function C4Canvas({
   onMoveElement,
   onMoveElementCommit,
 }: Props) {
+  // 记录当前 drill 回调，供节点上的「进入」按钮使用
+  drillHandler = onDrill;
+
   const nodes = useMemo<Node[]>(
     () =>
       elements.map((e) => ({
@@ -91,10 +106,9 @@ export default function C4Canvas({
           description: e.description,
           elementType: e.type,
           drillable: drillable(e),
-          onDrill,
         } as C4NodeData,
       })),
-    [elements, drillable, onDrill],
+    [elements, drillable],
   );
 
   const visible = useMemo(() => new Set(elements.map((e) => String(e.id))), [elements]);
