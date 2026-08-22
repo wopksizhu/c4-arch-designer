@@ -183,7 +183,7 @@ export default function ModelPage() {
           )}
           {activeTab === 'matrix' && <MatrixTab pid={pid} />}
           {activeTab === 'impact' && <ImpactTab pid={pid} elements={elements} requirements={requirements} />}
-          {activeTab === 'ai' && <AiTab pid={pid} onApply={reload} />}
+          {activeTab === 'ai' && <AiTab pid={pid} elements={visibleElements} relationships={visibleRelationships} onApply={reload} />}
         </div>
       </div>
     </div>
@@ -524,7 +524,7 @@ function ImpactTab({ pid, elements, requirements }: { pid: number; elements: Ele
 }
 
 // ---- AI 与导出 ----
-function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
+function AiTab({ pid, elements, relationships, onApply }: { pid: number; elements: Element[]; relationships: Relationship[]; onApply: () => void }) {
   const [text, setText] = useState('');
   const [aiOut, setAiOut] = useState('');
   const [draft, setDraft] = useState<AiDraft | null>(null);
@@ -600,6 +600,14 @@ function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
     a.download = `archlens-${pid}.${format === 'markdown' ? 'md' : format}`;
     a.click();
   }
+  function downloadSvg() {
+    const svg = buildSVG(elements, relationships);
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `archlens-${pid}-diagram.svg`;
+    a.click();
+  }
 
   return (
     <div className="grid2">
@@ -638,6 +646,8 @@ function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
         <button onClick={() => download('dsl')}>Structurizr DSL</button>
         <button onClick={() => download('json')}>JSON</button>
         <button onClick={() => download('markdown')}>Markdown</button>
+        <button className="primary" onClick={downloadSvg}>SVG（当前层级）</button>
+        <button onClick={() => download('html')}>HTML 报告</button>
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
         <div className="row">
@@ -667,4 +677,74 @@ function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
       </div>
     </div>
   );
+}
+
+const SVG_KIND: Record<string, string> = {
+  person: 'Person',
+  softwareSystem: 'Software System',
+  container: 'Container',
+  component: 'Component',
+};
+const SVG_COLOR: Record<string, string> = {
+  person: '#7c3aed',
+  softwareSystem: '#0f766e',
+  container: '#1d4ed8',
+  component: '#b45309',
+};
+
+function escapeXml(s: string) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+}
+
+// buildSVG 根据当前层级的元素与关系生成自包含 SVG 图。
+function buildSVG(elements: Element[], relationships: Relationship[]): string {
+  const W = 1000;
+  const H = 700;
+  if (elements.length === 0) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#f8fafc"/><text x="20" y="40" fill="#6b7280">当前层级暂无元素</text></svg>`;
+  }
+  const sizeOf = (t: string) =>
+    t === 'softwareSystem' ? { w: 220, h: 110 } : t === 'container' ? { w: 170, h: 92 } : t === 'component' ? { w: 140, h: 78 } : { w: 96, h: 84 };
+  const nodes = elements.map((e) => {
+    const s = sizeOf(e.type);
+    return { id: e.id, x: e.posX, y: e.posY, w: s.w, h: s.h, type: e.type, name: e.name };
+  });
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.w);
+    maxY = Math.max(maxY, n.y + n.h);
+  }
+  const pad = 40;
+  const scale = Math.min(1, (W - pad * 2) / Math.max(1, maxX - minX), (H - pad * 2) / Math.max(1, maxY - minY));
+  const px = (x: number) => pad + (x - minX) * scale;
+  const py = (y: number) => pad + (y - minY) * scale;
+  const parts: string[] = [];
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#f8fafc"/>`);
+  for (const r of relationships) {
+    const s = nodes.find((n) => n.id === r.sourceId);
+    const t = nodes.find((n) => n.id === r.targetId);
+    if (!s || !t) continue;
+    const sx = px(s.x) + s.w * scale;
+    const sy = py(s.y) + (s.h * scale) / 2;
+    const tx = px(t.x);
+    const ty = py(t.y) + (t.h * scale) / 2;
+    parts.push(`<line x1="${sx}" y1="${sy}" x2="${tx}" y2="${ty}" stroke="#64748b" stroke-width="1.5"/>`);
+    parts.push(`<polygon points="${tx},${ty} ${tx - 9},${ty - 4.5} ${tx - 9},${ty + 4.5}" fill="#64748b"/>`);
+    parts.push(`<text x="${(sx + tx) / 2}" y="${(sy + ty) / 2 - 6}" font-size="11" fill="#475569" text-anchor="middle">${escapeXml(r.label || 'uses')}</text>`);
+  }
+  for (const n of nodes) {
+    const x = px(n.x);
+    const y = py(n.y);
+    const w = n.w * scale;
+    const h = n.h * scale;
+    const c = SVG_COLOR[n.type] || '#94a3b8';
+    parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="${c}" stroke-width="2"/>`);
+    parts.push(`<text x="${x + w / 2}" y="${y + 20}" font-size="10" fill="#64748b" text-anchor="middle">${escapeXml(SVG_KIND[n.type] || n.type)}</text>`);
+    parts.push(`<text x="${x + w / 2}" y="${y + h / 2 + 14}" font-size="14" font-weight="600" fill="#1f2937" text-anchor="middle">${escapeXml(n.name)}</text>`);
+  }
+  parts.push('</svg>');
+  return parts.join('');
 }
