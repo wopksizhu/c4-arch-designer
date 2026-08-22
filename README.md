@@ -80,6 +80,16 @@ powershell -ExecutionPolicy Bypass -File run-tests.ps1 -AI
 # 或直接：cd server && go run ./scripts/apitest -base http://127.0.0.1:8080
 ```
 
+**前端 UI E2E（Playwright，用系统 Edge）**：
+```bash
+# 需先启动 .\archlens.exe
+cd web
+pnpm test:e2e
+# 首次或需指定浏览器：npx playwright install msedge（Windows 一般已内置 Edge，自动使用）
+```
+
+测试清单见 `docs/TESTING.md`（覆盖标记 + 新增功能的同步约定；**每加一个功能都需同步更新该清单与自动化测试**）。
+
 测试项（`server/scripts/apitest/main.go`）：创建项目、添加软件系统/子容器（嵌套）、带交互/协议的关系、手工+CSV 需求、原型、追溯链接（需求→元素、元素→原型）、**重复追溯被阻止**、追溯矩阵、影响分析、导出 json/dsl/markdown/html、DSL 导入、静态校验规则、元素/关系**部分更新**（验证不会被零值清空）。
 
 ## 目录
