@@ -1,7 +1,12 @@
 package api
 
 import (
+	"encoding/json"
+	"strings"
+
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
+	"github.com/gogf/gf/v2/util/gconv"
 
 	"archlens/server/internal/model"
 	"archlens/server/internal/store"
@@ -117,13 +122,57 @@ func createElement(r *ghttp.Request) {
 
 func updateElement(r *ghttp.Request) {
 	id := idOf(r, "id")
-	var e model.Element
-	if err := r.Parse(&e); err != nil {
+	var body map[string]interface{}
+	if err := json.Unmarshal(r.GetBody(), &body); err != nil {
 		fail(r, 51, err.Error())
 		return
 	}
-	e.Id = id
-	if err := store.UpdateElement(r.Context(), &e); err != nil {
+	sets := []string{}
+	args := []interface{}{}
+	add := func(col string, val interface{}) {
+		sets = append(sets, col+"=?")
+		args = append(args, val)
+	}
+	if v, ok := body["level"]; ok {
+		add("level", gconv.Int(v))
+	}
+	if v, ok := body["type"]; ok {
+		add("type", gconv.String(v))
+	}
+	if v, ok := body["name"]; ok {
+		add("name", gconv.String(v))
+	}
+	if v, ok := body["description"]; ok {
+		add("description", gconv.String(v))
+	}
+	if v, ok := body["technology"]; ok {
+		add("technology", gconv.String(v))
+	}
+	if v, ok := body["tags"]; ok {
+		add("tags", gconv.String(v))
+	}
+	if v, ok := body["parentId"]; ok {
+		if v == nil {
+			add("parent_id", nil)
+		} else {
+			add("parent_id", gconv.Int64(v))
+		}
+	}
+	if v, ok := body["posX"]; ok {
+		add("pos_x", gconv.Float64(v))
+	}
+	if v, ok := body["posY"]; ok {
+		add("pos_y", gconv.Float64(v))
+	}
+	if len(sets) == 0 {
+		got, _ := store.GetElement(r.Context(), id)
+		ok(r, got)
+		return
+	}
+	sets = append(sets, "updated_at=CURRENT_TIMESTAMP")
+	sql := "UPDATE elements SET " + strings.Join(sets, ", ") + " WHERE id=?"
+	args = append(args, id)
+	if _, err := g.DB().Exec(r.Context(), sql, args...); err != nil {
 		fail(r, 500, err.Error())
 		return
 	}
@@ -175,17 +224,55 @@ func createRelationship(r *ghttp.Request) {
 
 func updateRelationship(r *ghttp.Request) {
 	id := idOf(r, "id")
-	var rel model.Relationship
-	if err := r.Parse(&rel); err != nil {
+	var body map[string]interface{}
+	if err := json.Unmarshal(r.GetBody(), &body); err != nil {
 		fail(r, 51, err.Error())
 		return
 	}
-	rel.Id = id
-	if err := store.UpdateRelationship(r.Context(), &rel); err != nil {
+	sets := []string{}
+	args := []interface{}{}
+	add := func(col string, val interface{}) {
+		sets = append(sets, col+"=?")
+		args = append(args, val)
+	}
+	if v, ok := body["sourceId"]; ok {
+		add("source_id", gconv.Int64(v))
+	}
+	if v, ok := body["targetId"]; ok {
+		add("target_id", gconv.Int64(v))
+	}
+	if v, ok := body["label"]; ok {
+		add("label", gconv.String(v))
+	}
+	if v, ok := body["interaction"]; ok {
+		add("interaction", gconv.String(v))
+	}
+	if v, ok := body["protocol"]; ok {
+		add("protocol", gconv.String(v))
+	}
+	if v, ok := body["description"]; ok {
+		add("description", gconv.String(v))
+	}
+	if v, ok := body["technology"]; ok {
+		add("technology", gconv.String(v))
+	}
+	if v, ok := body["level"]; ok {
+		add("level", gconv.Int(v))
+	}
+	if len(sets) == 0 {
+		got, _ := store.GetRelationship(r.Context(), id)
+		ok(r, got)
+		return
+	}
+	sets = append(sets, "updated_at=CURRENT_TIMESTAMP")
+	sql := "UPDATE relationships SET " + strings.Join(sets, ", ") + " WHERE id=?"
+	args = append(args, id)
+	if _, err := g.DB().Exec(r.Context(), sql, args...); err != nil {
 		fail(r, 500, err.Error())
 		return
 	}
-	ok(r, rel)
+	got, _ := store.GetRelationship(r.Context(), id)
+	ok(r, got)
 }
 
 func deleteRelationship(r *ghttp.Request) {
