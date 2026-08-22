@@ -453,8 +453,13 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
                   onChange={async (e) => {
                     const elId = Number(e.target.value);
                     if (elId) {
-                      await api.createTraceLink(pid, { fromType: 'requirement', fromId: r.id, toType: 'element', toId: elId, linkType: 'satisfies' });
-                      onChanged();
+                      try {
+                        await api.createTraceLink(pid, { fromType: 'requirement', fromId: r.id, toType: 'element', toId: elId, linkType: 'satisfies' });
+                        onChanged();
+                      } catch (err: any) {
+                        // eslint-disable-next-line no-alert
+                        alert((err as Error).message || '关联失败');
+                      }
                     }
                   }}
                 >
@@ -544,8 +549,13 @@ function PrototypesTab({ pid, prototypes, containerElements, traceLinks, onChang
                     onChange={async (e) => {
                       const elId = Number(e.target.value);
                       if (elId) {
-                        await api.createTraceLink(pid, { fromType: 'element', fromId: elId, toType: 'prototype', toId: p.id, linkType: 'shows' });
-                        onChanged();
+                        try {
+                          await api.createTraceLink(pid, { fromType: 'element', fromId: elId, toType: 'prototype', toId: p.id, linkType: 'shows' });
+                          onChanged();
+                        } catch (err: any) {
+                          // eslint-disable-next-line no-alert
+                          alert((err as Error).message || '关联失败');
+                        }
                       }
                     }}
                   >

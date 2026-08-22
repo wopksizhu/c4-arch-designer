@@ -318,6 +318,13 @@ func ListTraceLinks(ctx context.Context, projectId int64) ([]model.TraceLink, er
 	return nn(out), nil
 }
 
+// TraceLinkExists 判断同一条追溯链接是否已存在（避免重复关联）。
+func TraceLinkExists(ctx context.Context, projectId int64, fromType string, fromId int64, toType string, toId int64) bool {
+	rec, err := g.DB().GetOne(ctx, "SELECT 1 FROM trace_links WHERE project_id=? AND from_type=? AND from_id=? AND to_type=? AND to_id=?",
+		projectId, fromType, fromId, toType, toId)
+	return err == nil && !rec.IsEmpty()
+}
+
 func CreateTraceLink(ctx context.Context, t *model.TraceLink) (int64, error) {
 	res, err := g.DB().Exec(ctx, `INSERT INTO trace_links(project_id, from_type, from_id, to_type, to_id, link_type) VALUES(?,?,?,?,?,?)`,
 		t.ProjectId, t.FromType, t.FromId, t.ToType, t.ToId, t.LinkType)

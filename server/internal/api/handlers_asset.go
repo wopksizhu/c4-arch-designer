@@ -182,6 +182,11 @@ func createTraceLink(r *ghttp.Request) {
 	if t.LinkType == "" {
 		t.LinkType = "satisfies"
 	}
+	// 防止重复关联（同一条需求/元素不能重复挂到同一个目标）
+	if store.TraceLinkExists(r.Context(), pid, t.FromType, t.FromId, t.ToType, t.ToId) {
+		fail(r, 400, "该关联已存在，避免重复")
+		return
+	}
 	id, err := store.CreateTraceLink(r.Context(), &t)
 	if err != nil {
 		fail(r, 500, err.Error())

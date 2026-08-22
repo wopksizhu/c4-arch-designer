@@ -63,6 +63,25 @@ open http://127.0.0.1:8080
 > `apiKey`、`model`（如 `deepseek-chat`）。未配置时 AI 相关按钮返回「离线 stub」说明。
 > 配置后重启进程生效；密钥只存服务端，不进浏览器。
 
+## 系统性测试
+
+用**可重复运行的 API 集成测试**覆盖全部已实现功能，输出 PASS/FAIL 报告，代替手工逐个点。
+
+```bash
+# 1) 启动服务（单独终端）
+.\archlens.exe
+
+# 2) 运行测试（覆盖 项目/建模/关系/需求/原型/追溯/影响分析/导出/导入/规则校验/部分更新/重复追溯去重）
+powershell -ExecutionPolicy Bypass -File run-tests.ps1
+
+# 可选：加 -AI 跑 AI 生成/校验（走 DeepSeek，较慢）
+powershell -ExecutionPolicy Bypass -File run-tests.ps1 -AI
+
+# 或直接：cd server && go run ./scripts/apitest -base http://127.0.0.1:8080
+```
+
+测试项（`server/scripts/apitest/main.go`）：创建项目、添加软件系统/子容器（嵌套）、带交互/协议的关系、手工+CSV 需求、原型、追溯链接（需求→元素、元素→原型）、**重复追溯被阻止**、追溯矩阵、影响分析、导出 json/dsl/markdown/html、DSL 导入、静态校验规则、元素/关系**部分更新**（验证不会被零值清空）。
+
 ## 目录
 ```
 c4-arch-designer/
