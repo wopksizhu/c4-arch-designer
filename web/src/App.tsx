@@ -11,14 +11,14 @@ export default function App() {
     <ErrorBoundary>
       <div className="app">
         <div className="topbar">
-          <Link to="/" style={{ fontWeight: 700, textDecoration: 'none', color: '#111' }}>
-            ArchLens
+          <Link to="/" style={{ textDecoration: 'none' }}>
+            <span className="brand">Arch<span>Lens</span></span>
           </Link>
-          <span className="muted" style={{ fontSize: 12 }}>
+          <span className="muted" style={{ fontSize: 13 }}>
             C4 架构设计 · 需求 / 原型 / 追溯
           </span>
           <div style={{ flex: 1 }} />
-          <button onClick={() => setHelp(true)}>使用说明</button>
+          <button className="ghost" onClick={() => setHelp(true)}>使用说明</button>
         </div>
         <div className="body">
           <Routes>

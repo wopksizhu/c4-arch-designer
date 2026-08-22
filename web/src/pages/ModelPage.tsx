@@ -27,6 +27,7 @@ const TYPE_LABEL: Record<string, string> = {
   container: 'Container',
   component: 'Component',
 };
+const prioLabel = (p: string) => (p === 'high' ? '高' : p === 'low' ? '低' : '中');
 
 export default function ModelPage() {
   const { id } = useParams();
@@ -135,6 +136,7 @@ export default function ModelPage() {
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <nav className="nav">
+        <div className="nav-title">功能模块</div>
         <button className={view === 'canvas' ? 'active' : ''} onClick={() => setView('canvas')}>画布</button>
         <button className={view === 'req' ? 'active' : ''} onClick={() => setView('req')}>需求</button>
         <button className={view === 'proto' ? 'active' : ''} onClick={() => setView('proto')}>原型</button>
@@ -147,11 +149,11 @@ export default function ModelPage() {
 
         {view === 'canvas' && (
           <>
-            <div className="row" style={{ padding: 10, background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+            <div className="canvasbar">
               <Link to="/" className="muted" style={{ textDecoration: 'none' }}>← 返回</Link>
               <strong>{project?.name || '…'}</strong>
               <div className="grow" />
-              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+              <div className="crumb">
                 <button className={drilledId === null ? 'active' : ''} onClick={() => setDrilledId(null)}>Context</button>
                 {breadcrumb.map((c) => (
                   <button key={c.id} className={drilledId === c.id ? 'active' : ''} onClick={() => setDrilledId(c.id)}>{c.name}</button>
@@ -160,9 +162,11 @@ export default function ModelPage() {
               </div>
               <span className="muted" style={{ fontSize: 12 }}>层级 {LEVEL_NAME[viewLevel]}</span>
               <span style={{ width: 8 }} />
-              {TYPES[viewLevel].map((t) => (
-                <button key={t} className="primary" onClick={() => addElement(t)}>+ {TYPE_LABEL[t]}</button>
-              ))}
+              <div className="adds">
+                {TYPES[viewLevel].map((t) => (
+                  <button key={t} className="primary sm" onClick={() => addElement(t)}>+ {TYPE_LABEL[t]}</button>
+                ))}
+              </div>
             </div>
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
               <div style={{ flex: 1 }}>
@@ -227,17 +231,34 @@ export default function ModelPage() {
 
         {view === 'req' && (
           <div className="page">
+            <div className="page-header"><h2>需求</h2><div className="sub">录入/导入需求，并把每条需求挂接到对应容器元素，形成「需求 → 容器」的反向追溯。</div></div>
             <RequirementsTab pid={pid} requirements={requirements} elements={elements.filter((e) => e.level === 2)} traceLinks={traceLinks} onChanged={reload} />
           </div>
         )}
         {view === 'proto' && (
           <div className="page">
+            <div className="page-header"><h2>界面原型</h2><div className="sub">上传截图或粘贴 URL/Figma，并把原型挂接到对应容器（容器 → 界面原型）。</div></div>
             <PrototypesTab pid={pid} prototypes={prototypes} containerElements={elements.filter((e) => e.level === 2)} traceLinks={traceLinks} onChanged={reload} />
           </div>
         )}
-        {view === 'matrix' && <div className="page"><MatrixTab pid={pid} /></div>}
-        {view === 'impact' && <div className="page"><ImpactTab pid={pid} elements={elements} requirements={requirements} /></div>}
-        {view === 'ai' && <div className="page"><AiTab pid={pid} elements={visibleElements} relationships={visibleRelationships} onApply={reload} /></div>}
+        {view === 'matrix' && (
+          <div className="page">
+            <div className="page-header"><h2>追溯矩阵</h2><div className="sub">汇总每个元素关联的需求与原型，一目了然地看追溯缺口。</div></div>
+            <MatrixTab pid={pid} />
+          </div>
+        )}
+        {view === 'impact' && (
+          <div className="page">
+            <div className="page-header"><h2>影响分析</h2><div className="sub">选择一个元素/需求，沿追溯链与容器关系扩散出受影响对象，用于需求变更评估。</div></div>
+            <ImpactTab pid={pid} elements={elements} requirements={requirements} />
+          </div>
+        )}
+        {view === 'ai' && (
+          <div className="page">
+            <div className="page-header"><h2>AI 与导出</h2><div className="sub">用 AI 生成/校验架构，或导入/导出 Structurizr DSL、JSON、Markdown、HTML、SVG、PNG。</div></div>
+            <AiTab pid={pid} elements={visibleElements} relationships={visibleRelationships} onApply={reload} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -386,11 +407,6 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
     }
   }
 
-  async function importMdFile(e: any) {
-    const f = e.target.files?.[0];
-    if (f) setMd(await f.text());
-  }
-
   const linksOf = (reqId: number) => traceLinks.filter((l) => l.fromType === 'requirement' && l.fromId === reqId);
   const linked = new Set(requirements.map((r) => r.id).filter((rid) => linksOf(rid).length > 0));
   const untraced = requirements.filter((r) => !linked.has(r.id));
@@ -398,93 +414,105 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
   return (
     <div>
       {untraced.length > 0 && (
-        <div className="panel" style={{ marginBottom: 12, borderLeft: '4px solid #f59e0b' }}>
-          <strong>有 {untraced.length} 条需求未关联任何元素（未被追溯）：</strong>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {untraced.map((r) => r.title).join('；')}
-          </span>
+        <div className="panel" style={{ marginBottom: 16, borderLeft: '3px solid var(--warning)' }}>
+          <div className="row" style={{ gap: 8 }}>
+            <span className="pill warn">{untraced.length} 条未追溯</span>
+            <strong>以下需求未关联任何元素：</strong>
+            <span className="muted" style={{ fontSize: 13 }}>
+              {untraced.map((r) => r.title).join('、')}
+            </span>
+          </div>
         </div>
       )}
       <div className="grid2">
         <div>
-        <div className="row" style={{ marginBottom: 8 }}>
-          <button onClick={() => setShowImport(!showImport)}>导入 Markdown</button>
-          {showImport && (
-            <span className="row">
-              <input type="file" accept=".md,.markdown,.txt" onChange={importMdFile} />
-              <button className="primary" onClick={importMd}>导入</button>
-            </span>
-          )}
-          <button onClick={() => setShowCsv(!showCsv)}>导入 CSV</button>
-          {showCsv && <button className="primary" onClick={importCsv}>导入</button>}
-          <label className="row" style={{ gap: 4 }}>
-            导入 Excel
-            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={importXlsx} />
-          </label>
-        </div>
-        {showImport && (
-          <textarea rows={4} placeholder="粘贴 Markdown 需求（标题/列表行作为需求，支持 [R1] 编号）…" value={md} onChange={(e) => setMd(e.target.value)} style={{ marginBottom: 8 }} />
-        )}
-        {showCsv && (
-          <textarea rows={4} placeholder={"粘贴 CSV：表头 code,title,description,priority,status,tags\n示例：R1,用户下单,支持下单,high,active"} value={csv} onChange={(e) => setCsv(e.target.value)} style={{ marginBottom: 8 }} />
-        )}
-        <div className="row">
-          <input placeholder="编号（可选）" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 90 }} />
-          <input placeholder="标题" value={title} onChange={(e) => setTitle(e.target.value)} className="grow" />
-        </div>
-        <div className="row" style={{ marginTop: 6 }}>
-          <textarea placeholder="描述" rows={2} value={desc} onChange={(e) => setDesc(e.target.value)} className="grow" />
-          <select value={prio} onChange={(e) => setPrio(e.target.value)} style={{ width: 100 }}>
-            <option value="high">高</option>
-            <option value="medium">中</option>
-            <option value="low">低</option>
-          </select>
-          <button className="primary" onClick={add}>添加</button>
-        </div>
-        <div className="list" style={{ marginTop: 10 }}>
-          {requirements.map((r) => (
-            <div key={r.id} className="card">
-              <div style={{ fontWeight: 600 }}>{r.code ? `[${r.code}] ` : ''}{r.title}</div>
-              <div className="muted" style={{ fontSize: 12 }}>{r.description}</div>
-              <div className="row" style={{ marginTop: 6 }}>
-                <span className="muted" style={{ fontSize: 12 }}>关联元素：</span>
-                <select
-                  defaultValue=""
-                  onChange={async (e) => {
-                    const elId = Number(e.target.value);
-                    if (elId) {
-                      try {
-                        await api.createTraceLink(pid, { fromType: 'requirement', fromId: r.id, toType: 'element', toId: elId, linkType: 'satisfies' });
-                        onChanged();
-                      } catch (err: any) {
-                        // eslint-disable-next-line no-alert
-                        alert((err as Error).message || '关联失败');
-                      }
-                    }
-                  }}
-                >
-                  <option value="">选择元素…</option>
-                  {elements.map((el) => (
-                    <option key={el.id} value={el.id}>{el.name}</option>
-                  ))}
-                </select>
-                <button className="danger" onClick={async () => { await api.deleteRequirement(r.id); onChanged(); }}>删</button>
-              </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                已关联：{linksOf(r.id).length === 0 ? '无' : linksOf(r.id).map((l) => elements.find((e) => e.id === l.toId)?.name).filter(Boolean).join(', ')}
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <div className="row between" style={{ marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+              <div className="title">新增需求</div>
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                <button className="sm" onClick={() => setShowImport(!showImport)}>导入 Markdown</button>
+                {showImport && <button className="primary sm" onClick={importMd}>导入</button>}
+                <button className="sm" onClick={() => setShowCsv(!showCsv)}>导入 CSV</button>
+                {showCsv && <button className="primary sm" onClick={importCsv}>导入</button>}
+                <label className="sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, margin: 0 }}>
+                  导入 Excel
+                  <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={importXlsx} />
+                </label>
               </div>
             </div>
-          ))}
+            {showImport && (
+              <textarea rows={4} placeholder="粘贴 Markdown 需求（标题/列表行作为需求，支持 [R1] 编号）…" value={md} onChange={(e) => setMd(e.target.value)} style={{ marginBottom: 10 }} />
+            )}
+            {showCsv && (
+              <textarea rows={4} placeholder={"粘贴 CSV：表头 code,title,description,priority,status,tags\n示例：R1,用户下单,支持下单,high,active"} value={csv} onChange={(e) => setCsv(e.target.value)} style={{ marginBottom: 10 }} />
+            )}
+            <div className="row">
+              <input placeholder="编号（可选）" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 96 }} />
+              <input placeholder="标题" value={title} onChange={(e) => setTitle(e.target.value)} className="grow" />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <textarea placeholder="描述" rows={2} value={desc} onChange={(e) => setDesc(e.target.value)} className="grow" />
+              <select value={prio} onChange={(e) => setPrio(e.target.value)} style={{ width: 110 }}>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+              <button className="primary" onClick={add}>添加</button>
+            </div>
+          </div>
+          <div className="list">
+            {requirements.length === 0 && <div className="empty"><div className="big">📋</div><div>暂无需求。手动添加或导入。</div></div>}
+            {requirements.map((r) => (
+              <div key={r.id} className="card">
+                <div className="row between">
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{r.code ? `[${r.code}] ` : ''}{r.title}</span>
+                    <span className={`pill ${['high', 'medium', 'low'].includes(r.priority) ? r.priority : 'info'}`} style={{ marginLeft: 8 }}>{prioLabel(r.priority)}</span>
+                  </div>
+                  <button className="danger sm" onClick={async () => { await api.deleteRequirement(r.id); onChanged(); }}>删除</button>
+                </div>
+                {r.description && <div className="subs">{r.description}</div>}
+                <div className="row" style={{ marginTop: 8 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>挂接元素：</span>
+                  <select
+                    defaultValue=""
+                    onChange={async (e) => {
+
+                      const elId = Number(e.target.value);
+                      if (elId) {
+                        try {
+                          await api.createTraceLink(pid, { fromType: 'requirement', fromId: r.id, toType: 'element', toId: elId, linkType: 'satisfies' });
+                          onChanged();
+                        } catch (err: any) {
+                          // eslint-disable-next-line no-alert
+                          alert((err as Error).message || '关联失败');
+                        }
+                      }
+                    }}
+                    style={{ maxWidth: 240 }}
+                  >
+                    <option value="">选择元素…</option>
+                    {elements.map((el) => (
+                      <option key={el.id} value={el.id}>{el.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="subs" style={{ marginTop: 4 }}>
+                  已关联：{linksOf(r.id).length === 0 ? '无' : linksOf(r.id).map((l) => elements.find((e) => e.id === l.toId)?.name).filter(Boolean).join('、')}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="panel muted" style={{ fontSize: 13 }}>
-        <strong>说明</strong>
-        <div>在容器视图下维护需求；每条需求可关联到某个容器元素，形成“需求 → 容器”的追溯。</div>
-      </div>
+        <div className="panel muted" style={{ fontSize: 13 }}>
+          <strong>说明</strong>
+          <div style={{ marginTop: 6 }}>把每条需求挂接到对应容器元素，形成「需求 → 容器」的追溯。顶部会汇总未被追溯的需求。</div>
+        </div>
       </div>
     </div>
   );
 }
+
 
 // ---- 原型 ----
 function PrototypesTab({ pid, prototypes, containerElements, traceLinks, onChanged }: { pid: number; prototypes: Prototype[]; containerElements: Element[]; traceLinks: TraceLink[]; onChanged: () => void }) {
@@ -529,42 +557,44 @@ function PrototypesTab({ pid, prototypes, containerElements, traceLinks, onChang
           <button className="primary" onClick={addUrl}>添加链接</button>
         </div>
         <div className="list" style={{ marginTop: 10 }}>
+          {prototypes.length === 0 && <div className="empty"><div className="big">🖼️</div><div>暂无原型。上传截图或添加链接。</div></div>}
           {prototypes.map((p) => (
-            <div key={p.id} className="card row">
-              {p.type === 'image' ? (
-                <img src={p.uri} alt={p.name} style={{ width: 80, height: 56, objectFit: 'cover', borderRadius: 6 }} />
-              ) : (
-                <a href={p.uri} target="_blank" rel="noreferrer" style={{ width: 80, display: 'block', fontSize: 12, textAlign: 'center' }}>
-                  打开链接 ↗
-                </a>
-              )}
-              <div className="grow">
-                <div style={{ fontWeight: 600 }}>{p.name}</div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  挂接容器：{linksOf(p.id).length === 0 ? '无' : linksOf(p.id).map((l) => containerName(l.fromId)).filter(Boolean).join(', ')}
-                </div>
-                <div className="row" style={{ marginTop: 4 }}>
-                  <select
-                    defaultValue=""
-                    onChange={async (e) => {
-                      const elId = Number(e.target.value);
-                      if (elId) {
-                        try {
-                          await api.createTraceLink(pid, { fromType: 'element', fromId: elId, toType: 'prototype', toId: p.id, linkType: 'shows' });
-                          onChanged();
-                        } catch (err: any) {
-                          // eslint-disable-next-line no-alert
-                          alert((err as Error).message || '关联失败');
+            <div key={p.id} className="card">
+              <div className="row" style={{ alignItems: 'flex-start' }}>
+                {p.type === 'image' ? (
+                  <img src={p.uri} alt={p.name} style={{ width: 96, height: 64, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+                ) : (
+                  <a href={p.uri} target="_blank" rel="noreferrer" className="pill info" style={{ flexShrink: 0, textDecoration: 'none' }}>打开链接 ↗</a>
+                )}
+                <div className="grow">
+                  <div className="title">{p.name}</div>
+                  <div className="subs">
+                    挂接容器：{linksOf(p.id).length === 0 ? '无' : linksOf(p.id).map((l) => containerName(l.fromId)).filter(Boolean).join('、')}
+                  </div>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <select
+                      defaultValue=""
+                      onChange={async (e) => {
+                        const elId = Number(e.target.value);
+                        if (elId) {
+                          try {
+                            await api.createTraceLink(pid, { fromType: 'element', fromId: elId, toType: 'prototype', toId: p.id, linkType: 'shows' });
+                            onChanged();
+                          } catch (err: any) {
+                            // eslint-disable-next-line no-alert
+                            alert((err as Error).message || '关联失败');
+                          }
                         }
-                      }
-                    }}
-                  >
-                    <option value="">选择容器…</option>
-                    {containerElements.map((el) => (
-                      <option key={el.id} value={el.id}>{el.name}</option>
-                    ))}
-                  </select>
-                  <button className="danger" onClick={async () => { await api.deletePrototype(p.id); onChanged(); }}>删</button>
+                      }}
+                      style={{ maxWidth: 240 }}
+                    >
+                      <option value="">选择容器…</option>
+                      {containerElements.map((el) => (
+                        <option key={el.id} value={el.id}>{el.name}</option>
+                      ))}
+                    </select>
+                    <button className="danger sm" onClick={async () => { await api.deletePrototype(p.id); onChanged(); }}>删除</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -587,27 +617,29 @@ function MatrixTab({ pid }: { pid: number }) {
   }, [pid]);
   return (
     <div>
-      <table>
-        <thead>
-          <tr>
-            <th>元素</th>
-            <th>层级</th>
-            <th>关联需求</th>
-            <th>关联原型</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.elementId}>
-              <td>{r.elementName}</td>
-              <td>{LEVEL_NAME[r.level]}</td>
-              <td>{r.requirementText || '—'}</td>
-              <td>{r.prototypeText || '—'}</td>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>元素</th>
+              <th>层级</th>
+              <th>关联需求</th>
+              <th>关联原型</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && <div className="muted" style={{ marginTop: 8 }}>暂无元素。</div>}
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.elementId}>
+                <td>{r.elementName}</td>
+                <td><span className="pill info">{LEVEL_NAME[r.level]}</span></td>
+                <td>{r.requirementText || '—'}</td>
+                <td>{r.prototypeText || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length === 0 && <div className="empty"><div className="big">🔗</div><div>暂无元素。先在画布上建模。</div></div>}
     </div>
   );
 }
