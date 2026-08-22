@@ -1,0 +1,22 @@
+# ArchLens 服务端配置（GoFrame）
+server:
+  address: ":8080"
+  # CORS: 开发时前端 Vite dev server 走代理，生产同源，无需 CORS
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+
+database:
+  default:
+    # 纯 Go SQLite 驱动（免 CGO）。相对路径基于工作目录（进程 cwd）。
+    link: "sqlite::@file(./data/archlens.db)"
+    debug: false
+
+# 应用自定义配置
+archlens:
+  uploadDir: "./data/uploads"      # 上传的原型图片目录
+  ai:
+    enabled: true
+    baseUrl: ""                     # 如 https://api.deepseek.com
+    apiKey: ""                      # 仅存服务端；留空则默认走 stub
+    model: "deepseek-chat"
+    budget: 0                       # 0 = 不限, 正整数为次数/预算上限

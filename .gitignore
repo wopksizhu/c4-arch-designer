@@ -1,0 +1,18 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Go 构建产物
+archlens.exe
+server/archlens.exe
+
+# 运行时自举产物（首次运行生成，可随时删除）
+/data/
+/manifest/
+
+# Env / OS
+.env
+*.log
+.DS_Store
+Thumbs.db

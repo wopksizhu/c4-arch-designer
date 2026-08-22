@@ -1,0 +1,536 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import * as api from '../api';
+import C4Canvas from '../components/C4Canvas';
+import type {
+  Element,
+  ElementType,
+  ImpactResult,
+  Project,
+  Prototype,
+  Relationship,
+  Requirement,
+  TraceLink,
+  TraceMatrixRow,
+} from '../types';
+
+const LEVEL_NAME: Record<number, string> = { 1: 'Context', 2: 'Container', 3: 'Component' };
+const TYPES: Record<number, string[]> = {
+  1: ['person', 'softwareSystem'],
+  2: ['container'],
+  3: ['component'],
+};
+const TYPE_LABEL: Record<string, string> = {
+  person: 'Person',
+  softwareSystem: 'Software System',
+  container: 'Container',
+  component: 'Component',
+};
+
+export default function ModelPage() {
+  const { id } = useParams();
+  const pid = Number(id);
+
+  const [project, setProject] = useState<Project | null>(null);
+  const [elements, setElements] = useState<Element[]>([]);
+  const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [prototypes, setPrototypes] = useState<Prototype[]>([]);
+  const [traceLinks, setTraceLinks] = useState<TraceLink[]>([]);
+  const [level, setLevel] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('req');
+  const [err, setErr] = useState('');
+
+  const reload = useCallback(async () => {
+    try {
+      const [p, es, rs, qs, ps, ts] = await Promise.all([
+        api.listProjects().then((ps) => ps.find((x) => x.id === pid) || null),
+        api.listElements(pid),
+        api.listRelationships(pid),
+        api.listRequirements(pid),
+        api.listPrototypes(pid),
+        api.listTraceLinks(pid),
+      ]);
+      setProject(p);
+      setElements(es);
+      setRelationships(rs);
+      setRequirements(qs);
+      setPrototypes(ps);
+      setTraceLinks(ts);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }, [pid]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const visibleElements = useMemo(
+    () => elements.filter((e) => e.level === level),
+    [elements, level],
+  );
+  const visibleRelationships = useMemo(
+    () => relationships.filter((r) => r.level === level),
+    [relationships, level],
+  );
+
+  async function addElement(type: string) {
+    const e = await api.createElement(pid, {
+      level,
+      type: type as ElementType,
+      name: 'New ' + TYPE_LABEL[type],
+      posX: 200 + elements.length * 20,
+      posY: 200 + elements.length * 20,
+    });
+    setElements((prev) => [...prev, e]);
+  }
+
+  async function addEdge(sourceId: number, targetId: number) {
+    const r = await api.createRelationship(pid, {
+      sourceId,
+      targetId,
+      label: 'uses',
+      level,
+    });
+    setRelationships((prev) => [...prev, r]);
+  }
+
+  async function moveElement(id: number, x: number, y: number) {
+    const e = elements.find((x) => x.id === id);
+    if (!e) return;
+    const updated = { ...e, posX: x, posY: y };
+    setElements((prev) => prev.map((it) => (it.id === id ? updated : it)));
+    await api.updateElement(id, { posX: x, posY: y });
+  }
+
+  const selectedElement = elements.find((e) => String(e.id) === selectedId) || null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div className="row" style={{ padding: 10, background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+        <Link to="/" className="muted" style={{ textDecoration: 'none' }}>
+          ← 返回
+        </Link>
+        <strong>{project?.name || '…'}</strong>
+        <span className="muted" style={{ fontSize: 12 }}>{project?.description}</span>
+        <div className="grow" />
+        <div className="levels">
+          {[1, 2, 3].map((l) => (
+            <button key={l} className={level === l ? 'active' : ''} onClick={() => setLevel(l)}>
+              {l} {LEVEL_NAME[l]}
+            </button>
+          ))}
+        </div>
+        <span style={{ width: 8 }} />
+        {TYPES[level].map((t) => (
+          <button key={t} className="primary" onClick={() => addElement(t)}>
+            + {TYPE_LABEL[t]}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1 }}>
+          <C4Canvas
+            elements={visibleElements}
+            relationships={visibleRelationships}
+            onSelect={setSelectedId}
+            onAddEdge={addEdge}
+            onMoveElement={moveElement}
+          />
+        </div>
+        <aside style={{ width: 320, borderLeft: '1px solid #e5e7eb', background: '#fff', overflow: 'auto' }}>
+          <Inspector element={selectedElement} onSave={async (e) => { await api.updateElement(e.id, e); reload(); }} onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }} />
+        </aside>
+      </div>
+
+      <div className="tabs" style={{ height: 360, borderTop: '1px solid #e5e7eb', background: '#fff' }}>
+        <div className="tablist">
+          {[
+            ['req', '需求'],
+            ['proto', '原型'],
+            ['matrix', '追溯矩阵'],
+            ['impact', '影响分析'],
+            ['ai', 'AI 与导出'],
+          ].map(([k, label]) => (
+            <button key={k} className={activeTab === k ? 'active' : ''} onClick={() => setActiveTab(k)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="tabcontent">
+          {err && <div className="muted" style={{ color: '#dc2626', marginBottom: 8 }}>{err}</div>}
+          {activeTab === 'req' && (
+            <RequirementsTab
+              pid={pid}
+              requirements={requirements}
+              elements={elements.filter((e) => e.level === 2)}
+              traceLinks={traceLinks}
+              onChanged={reload}
+            />
+          )}
+          {activeTab === 'proto' && (
+            <PrototypesTab
+              pid={pid}
+              prototypes={prototypes}
+              containerElements={elements.filter((e) => e.level === 2)}
+              traceLinks={traceLinks}
+              onChanged={reload}
+            />
+          )}
+          {activeTab === 'matrix' && <MatrixTab pid={pid} />}
+          {activeTab === 'impact' && <ImpactTab pid={pid} elements={elements} requirements={requirements} />}
+          {activeTab === 'ai' && <AiTab pid={pid} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Inspector ----
+function Inspector({ element, onSave, onDelete }: { element: Element | null; onSave: (e: Element) => void; onDelete: (id: number) => void }) {
+  const [form, setForm] = useState<Element | null>(null);
+  useEffect(() => setForm(element), [element]);
+  if (!element || !form)
+    return (
+      <div style={{ padding: 20 }} className="muted">
+        选中元素后可编辑属性。在画布上点击一个元素。
+      </div>
+    );
+  const set = (k: keyof Element, v: any) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  return (
+    <div style={{ padding: 16 }}>
+      <label>类型</label>
+      <select value={form.type} onChange={(e) => set('type', e.target.value)}>
+        {Object.entries(TYPE_LABEL).map(([k, v]) => (
+          <option key={k} value={k}>{v}</option>
+        ))}
+      </select>
+      <label>名称</label>
+      <input value={form.name} onChange={(e) => set('name', e.target.value)} />
+      <label>描述</label>
+      <textarea rows={3} value={form.description} onChange={(e) => set('description', e.target.value)} />
+      <label>技术栈</label>
+      <input value={form.technology} onChange={(e) => set('technology', e.target.value)} />
+      <label>标签</label>
+      <input value={form.tags} onChange={(e) => set('tags', e.target.value)} />
+      <label>层级</label>
+      <select value={form.level} onChange={(e) => set('level', Number(e.target.value))}>
+        <option value={1}>Context</option>
+        <option value={2}>Container</option>
+        <option value={3}>Component</option>
+      </select>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="primary" onClick={() => onSave(form)}>保存</button>
+        <button className="danger" onClick={() => onDelete(form.id)}>删除</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- 需求 ----
+function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }: { pid: number; requirements: Requirement[]; elements: Element[]; traceLinks: TraceLink[]; onChanged: () => void }) {
+  const [code, setCode] = useState('');
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [prio, setPrio] = useState('medium');
+
+  async function add() {
+    if (!title.trim()) return;
+    await api.createRequirement(pid, { code, title, description: desc, priority: prio });
+    setTitle('');
+    setDesc('');
+    onChanged();
+  }
+
+  const linksOf = (reqId: number) => traceLinks.filter((l) => l.fromType === 'requirement' && l.fromId === reqId);
+
+  return (
+    <div className="grid2">
+      <div>
+        <div className="row">
+          <input placeholder="编号（可选）" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 90 }} />
+          <input placeholder="标题" value={title} onChange={(e) => setTitle(e.target.value)} className="grow" />
+        </div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <textarea placeholder="描述" rows={2} value={desc} onChange={(e) => setDesc(e.target.value)} className="grow" />
+          <select value={prio} onChange={(e) => setPrio(e.target.value)} style={{ width: 100 }}>
+            <option value="high">高</option>
+            <option value="medium">中</option>
+            <option value="low">低</option>
+          </select>
+          <button className="primary" onClick={add}>添加</button>
+        </div>
+        <div className="list" style={{ marginTop: 10 }}>
+          {requirements.map((r) => (
+            <div key={r.id} className="card">
+              <div style={{ fontWeight: 600 }}>{r.code ? `[${r.code}] ` : ''}{r.title}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{r.description}</div>
+              <div className="row" style={{ marginTop: 6 }}>
+                <span className="muted" style={{ fontSize: 12 }}>关联元素：</span>
+                <select
+                  defaultValue=""
+                  onChange={async (e) => {
+                    const elId = Number(e.target.value);
+                    if (elId) {
+                      await api.createTraceLink(pid, { fromType: 'requirement', fromId: r.id, toType: 'element', toId: elId, linkType: 'satisfies' });
+                      onChanged();
+                    }
+                  }}
+                >
+                  <option value="">选择元素…</option>
+                  {elements.map((el) => (
+                    <option key={el.id} value={el.id}>{el.name}</option>
+                  ))}
+                </select>
+                <button className="danger" onClick={async () => { await api.deleteRequirement(r.id); onChanged(); }}>删</button>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                已关联：{linksOf(r.id).length === 0 ? '无' : linksOf(r.id).map((l) => elements.find((e) => e.id === l.toId)?.name).filter(Boolean).join(', ')}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel muted" style={{ fontSize: 13 }}>
+        <strong>说明</strong>
+        <div>在容器视图下维护需求；每条需求可关联到某个容器元素，形成“需求 → 容器”的追溯。</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- 原型 ----
+function PrototypesTab({ pid, prototypes, containerElements, traceLinks, onChanged }: { pid: number; prototypes: Prototype[]; containerElements: Element[]; traceLinks: TraceLink[]; onChanged: () => void }) {
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+
+  async function addImage() {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('name', name || file.name);
+    fd.append('type', 'image');
+    fd.append('file', file);
+    await api.uploadPrototype(pid, fd);
+    setName('');
+    setFile(null);
+    onChanged();
+  }
+  async function addUrl() {
+    if (!url.trim()) return;
+    await api.createPrototypeLink(pid, { name: name || url, type: 'url', uri: url });
+    setName('');
+    setUrl('');
+    onChanged();
+  }
+
+  const linksOf = (protoId: number) => traceLinks.filter((l) => l.fromType === 'element' && l.toType === 'prototype' && l.toId === protoId);
+  const containerName = (id: number) => containerElements.find((e) => e.id === id)?.name;
+
+  return (
+    <div className="grid2">
+      <div>
+        <div className="row">
+          <input placeholder="原型名称" value={name} onChange={(e) => setName(e.target.value)} className="grow" />
+        </div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          <button className="primary" onClick={addImage}>上传图片</button>
+        </div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <input placeholder="原型 URL / Figma 链接" value={url} onChange={(e) => setUrl(e.target.value)} className="grow" />
+          <button className="primary" onClick={addUrl}>添加链接</button>
+        </div>
+        <div className="list" style={{ marginTop: 10 }}>
+          {prototypes.map((p) => (
+            <div key={p.id} className="card row">
+              {p.type === 'image' ? (
+                <img src={p.uri} alt={p.name} style={{ width: 80, height: 56, objectFit: 'cover', borderRadius: 6 }} />
+              ) : (
+                <a href={p.uri} target="_blank" rel="noreferrer" style={{ width: 80, display: 'block', fontSize: 12, textAlign: 'center' }}>
+                  打开链接 ↗
+                </a>
+              )}
+              <div className="grow">
+                <div style={{ fontWeight: 600 }}>{p.name}</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  挂接容器：{linksOf(p.id).length === 0 ? '无' : linksOf(p.id).map((l) => containerName(l.fromId)).filter(Boolean).join(', ')}
+                </div>
+                <div className="row" style={{ marginTop: 4 }}>
+                  <select
+                    defaultValue=""
+                    onChange={async (e) => {
+                      const elId = Number(e.target.value);
+                      if (elId) {
+                        await api.createTraceLink(pid, { fromType: 'element', fromId: elId, toType: 'prototype', toId: p.id, linkType: 'shows' });
+                        onChanged();
+                      }
+                    }}
+                  >
+                    <option value="">选择容器…</option>
+                    {containerElements.map((el) => (
+                      <option key={el.id} value={el.id}>{el.name}</option>
+                    ))}
+                  </select>
+                  <button className="danger" onClick={async () => { await api.deletePrototype(p.id); onChanged(); }}>删</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="panel muted" style={{ fontSize: 13 }}>
+        <strong>说明</strong>
+        <div>上传界面截图或链接到原型；再将其挂接到某个容器元素，形成“容器 → 界面原型”的追溯。</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- 追溯矩阵 ----
+function MatrixTab({ pid }: { pid: number }) {
+  const [rows, setRows] = useState<TraceMatrixRow[]>([]);
+  useEffect(() => {
+    api.getMatrix(pid).then(setRows).catch(() => setRows([]));
+  }, [pid]);
+  return (
+    <div>
+      <table>
+        <thead>
+          <tr>
+            <th>元素</th>
+            <th>层级</th>
+            <th>关联需求</th>
+            <th>关联原型</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.elementId}>
+              <td>{r.elementName}</td>
+              <td>{LEVEL_NAME[r.level]}</td>
+              <td>{r.requirementText || '—'}</td>
+              <td>{r.prototypeText || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && <div className="muted" style={{ marginTop: 8 }}>暂无元素。</div>}
+    </div>
+  );
+}
+
+// ---- 影响分析 ----
+function ImpactTab({ pid, elements, requirements }: { pid: number; elements: Element[]; requirements: Requirement[] }) {
+  const [type, setType] = useState('element');
+  const [oid, setOid] = useState<string>('');
+  const [result, setResult] = useState<ImpactResult | null>(null);
+
+  const items: any[] = type === 'element' ? elements : type === 'requirement' ? requirements : [];
+
+  async function run() {
+    if (!oid) return;
+    setResult(await api.getImpact(pid, type, Number(oid)));
+  }
+
+  return (
+    <div className="grid2">
+      <div>
+        <div className="row">
+          <select value={type} onChange={(e) => { setType(e.target.value); setOid(''); }}>
+            <option value="element">元素</option>
+            <option value="requirement">需求</option>
+          </select>
+          <select value={oid} onChange={(e) => setOid(e.target.value)} className="grow">
+            <option value="">选择对象…</option>
+            {items.map((it) => (
+              <option key={it.id} value={it.id}>{(it as any).name || (it as any).title}</option>
+            ))}
+          </select>
+          <button className="primary" onClick={run}>分析影响</button>
+        </div>
+        {result && (
+          <div className="panel" style={{ marginTop: 10 }}>
+            <div>影响对象：<strong>{result.root.name}</strong></div>
+            <div className="muted" style={{ margin: '6px 0' }}>受影响（{result.affected.length}）：</div>
+            <div className="list">
+              {result.affected.map((n, i) => (
+                <div key={i} className="card" style={{ display: 'flex', gap: 6 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>{n.type}</span>
+                  <span>{n.name}</span>
+                </div>
+              ))}
+              {result.affected.length === 0 && <div className="muted">无直接影响对象。</div>}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="panel muted" style={{ fontSize: 13 }}>
+        <strong>说明</strong>
+        <div>选择一个元素或需求，系统沿追溯链与容器关系扩散，列出所有受影响的对象，用于需求变更评估。</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- AI 与导出 ----
+function AiTab({ pid }: { pid: number }) {
+  const [text, setText] = useState('');
+  const [aiOut, setAiOut] = useState('');
+  const [validateOut, setValidateOut] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function gen() {
+    setBusy(true);
+    try {
+      const r = await api.aiGenerate(pid, text);
+      setAiOut(r.text);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function val() {
+    setBusy(true);
+    try {
+      const r = await api.aiValidate(pid, 'all');
+      setValidateOut(r.text);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function download(format: string) {
+    const content = await api.exportProject(pid, format);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `archlens-${pid}.${format === 'markdown' ? 'md' : format}`;
+    a.click();
+  }
+
+  return (
+    <div className="grid2">
+      <div>
+        <textarea rows={4} placeholder="粘贴需求/一段描述…" value={text} onChange={(e) => setText(e.target.value)} />
+        <button className="primary" onClick={gen} disabled={busy}>生成 C4 初稿</button>
+        {aiOut && (
+          <pre style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: 12, marginTop: 8 }}>{aiOut}</pre>
+        )}
+      </div>
+      <div>
+        <button onClick={val} disabled={busy}>AI 一致性校验</button>
+        {validateOut && (
+          <pre style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: 12, marginTop: 8 }}>{validateOut}</pre>
+        )}
+      </div>
+      <div className="row" style={{ gridColumn: '1 / -1' }}>
+        <span className="muted" style={{ fontSize: 13 }}>导出（git 友好）：</span>
+        <button onClick={() => download('dsl')}>Structurizr DSL</button>
+        <button onClick={() => download('json')}>JSON</button>
+        <button onClick={() => download('markdown')}>Markdown</button>
+      </div>
+    </div>
+  );
+}
