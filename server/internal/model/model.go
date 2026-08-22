@@ -46,6 +46,8 @@ type Relationship struct {
 	SourceId    int64     `json:"sourceId"`
 	TargetId    int64     `json:"targetId"`
 	Label       string    `json:"label"`
+	Interaction string    `json:"interaction"` // 交互内容，如“下单”
+	Protocol    string    `json:"protocol"`    // 通信协议，如 REST/HTTP, MQ
 	Description string    `json:"description"`
 	Technology  string    `json:"technology"`
 	Level       int       `json:"level"`

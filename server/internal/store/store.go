@@ -179,8 +179,8 @@ func GetRelationship(ctx context.Context, id int64) (*model.Relationship, error)
 }
 
 func CreateRelationship(ctx context.Context, r *model.Relationship) (int64, error) {
-	res, err := g.DB().Exec(ctx, `INSERT INTO relationships(project_id, source_id, target_id, label, description, technology, level) VALUES(?,?,?,?,?,?,?)`,
-		r.ProjectId, r.SourceId, r.TargetId, r.Label, r.Description, r.Technology, r.Level)
+	res, err := g.DB().Exec(ctx, `INSERT INTO relationships(project_id, source_id, target_id, label, interaction, protocol, description, technology, level) VALUES(?,?,?,?,?,?,?,?,?)`,
+		r.ProjectId, r.SourceId, r.TargetId, r.Label, r.Interaction, r.Protocol, r.Description, r.Technology, r.Level)
 	if err != nil {
 		return 0, err
 	}
@@ -188,8 +188,8 @@ func CreateRelationship(ctx context.Context, r *model.Relationship) (int64, erro
 }
 
 func UpdateRelationship(ctx context.Context, r *model.Relationship) error {
-	_, err := g.DB().Exec(ctx, `UPDATE relationships SET source_id=?, target_id=?, label=?, description=?, technology=?, level=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		r.SourceId, r.TargetId, r.Label, r.Description, r.Technology, r.Level, r.Id)
+	_, err := g.DB().Exec(ctx, `UPDATE relationships SET source_id=?, target_id=?, label=?, interaction=?, protocol=?, description=?, technology=?, level=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		r.SourceId, r.TargetId, r.Label, r.Interaction, r.Protocol, r.Description, r.Technology, r.Level, r.Id)
 	return err
 }
 

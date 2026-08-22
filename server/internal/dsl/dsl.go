@@ -103,11 +103,15 @@ func buildDSL(p *model.Project, elems []model.Element, rels []model.Relationship
 		if s == nil || t == nil {
 			continue
 		}
-		label := rel.Label
-		if label == "" {
-			label = "uses"
+		interaction := rel.Interaction
+		if interaction == "" {
+			interaction = rel.Label
 		}
-		b.WriteString(fmt.Sprintf("    \"%s\" -> \"%s\" \"%s\"\n", s.Name, t.Name, label))
+		if interaction == "" {
+			interaction = "uses"
+		}
+		// Structurizr DSL: "A" -> "B" "description" "technology"
+		b.WriteString(fmt.Sprintf("    \"%s\" -> \"%s\" \"%s\" \"%s\"\n", s.Name, t.Name, interaction, rel.Protocol))
 	}
 
 	b.WriteString("  }\n")

@@ -30,6 +30,8 @@ export interface Relationship {
   sourceId: number;
   targetId: number;
   label: string;
+  interaction: string;
+  protocol: string;
   description: string;
   technology: string;
   level: number;

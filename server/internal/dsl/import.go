@@ -11,7 +11,7 @@ import (
 
 var (
 	reElem = regexp.MustCompile(`\b(person|softwareSystem|container|component)\s+"([^"]+)"\s*(\{)?`)
-	reRel  = regexp.MustCompile(`"([^"]+)"\s*->\s*"([^"]+)"\s*"([^"]*)"`)
+	reRel  = regexp.MustCompile(`"([^"]+)"\s*->\s*"([^"]+)"\s*"([^"]*)"\s*(?:"([^"]*)")?`)
 )
 
 type parsedElem struct {
@@ -20,7 +20,7 @@ type parsedElem struct {
 	Parent string
 }
 type parsedRel struct {
-	Src, Dst, Label string
+	Src, Dst, Label, Protocol string
 }
 
 // ImportDSL 解析类 Structurizr DSL，把元素与关系写入项目。
@@ -72,7 +72,7 @@ func ImportDSL(ctx context.Context, projectId int64, content string) (int, int, 
 			continue
 		}
 		if m := reRel.FindStringSubmatch(line); m != nil {
-			rels = append(rels, parsedRel{Src: m[1], Dst: m[2], Label: m[3]})
+			rels = append(rels, parsedRel{Src: m[1], Dst: m[2], Label: m[3], Protocol: m[4]})
 		}
 	}
 
@@ -112,7 +112,8 @@ func ImportDSL(ctx context.Context, projectId int64, content string) (int, int, 
 		t, tok := ids[strings.TrimSpace(r.Dst)]
 		if sok && tok && s != t {
 			if _, err := store.CreateRelationship(ctx, &model.Relationship{
-				ProjectId: projectId, SourceId: s, TargetId: t, Label: orDef(r.Label, "uses"),
+				ProjectId: projectId, SourceId: s, TargetId: t,
+				Label: orDef(r.Label, "uses"), Interaction: strings.TrimSpace(r.Label), Protocol: strings.TrimSpace(r.Protocol),
 			}); err == nil {
 				relCreated++
 			}

@@ -45,6 +45,8 @@ export const deleteElement = (id: number) => request<unknown>(`/elements/${id}`,
 export const listRelationships = (pid: number) => request<Relationship[]>(`/projects/${pid}/relationships`);
 export const createRelationship = (pid: number, r: Partial<Relationship>) =>
   request<Relationship>(`/projects/${pid}/relationships`, { method: 'POST', body: JSON.stringify(r) });
+export const updateRelationship = (id: number, r: Partial<Relationship>) =>
+  request<Relationship>(`/relationships/${id}`, { method: 'PUT', body: JSON.stringify(r) });
 export const deleteRelationship = (id: number) => request<unknown>(`/relationships/${id}`, { method: 'DELETE' });
 
 // ---- requirements ----
@@ -104,6 +106,11 @@ export const aiCode = (pid: number, dir: string) =>
   });
 export const aiEnrich = (pid: number, payload: { name: string; description: string; type: string }) =>
   request<{ text: string }>(`/projects/${pid}/ai/enrich`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+export const aiDesign = (pid: number, payload: { name: string; type: string; description: string }) =>
+  request<{ text: string; draft: AiDraft | null }>(`/projects/${pid}/ai/design`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

@@ -38,7 +38,7 @@ export default function ModelPage() {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [prototypes, setPrototypes] = useState<Prototype[]>([]);
   const [traceLinks, setTraceLinks] = useState<TraceLink[]>([]);
-  const [level, setLevel] = useState(1);
+  const [drilledId, setDrilledId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('req');
   const [err, setErr] = useState('');
@@ -68,20 +68,43 @@ export default function ModelPage() {
     reload();
   }, [reload]);
 
-  const visibleElements = useMemo(
-    () => elements.filter((e) => e.level === level),
-    [elements, level],
-  );
+  // 钻取式 C4：breadcrumb 从当前钻取元素沿 parentId 上行到根
+  const breadcrumb = useMemo(() => {
+    let cur = drilledId;
+    const chain: { id: number; name: string; type: string }[] = [];
+    const byId = new Map(elements.map((e) => [e.id, e]));
+    while (cur !== null) {
+      const e = byId.get(cur);
+      if (!e) break;
+      chain.unshift({ id: e.id, name: e.name, type: e.type });
+      cur = e.parentId;
+    }
+    return chain;
+  }, [drilledId, elements]);
+
+  // 当前视图层级：drillId 为 null = Context(1)；否则 = 钻取元素层级 + 1
+  const drilledElement = drilledId !== null ? elements.find((e) => e.id === drilledId) || null : null;
+  const viewLevel = drilledElement ? drilledElement.level + 1 : 1;
+
+  const visibleElements = useMemo(() => {
+    if (drilledId === null) return elements.filter((e) => e.parentId === null);
+    return elements.filter((e) => e.parentId === drilledId);
+  }, [elements, drilledId]);
+
+  const visibleIds = useMemo(() => new Set(visibleElements.map((e) => e.id)), [visibleElements]);
   const visibleRelationships = useMemo(
-    () => relationships.filter((r) => r.level === level),
-    [relationships, level],
+    () => relationships.filter((r) => visibleIds.has(r.sourceId) && visibleIds.has(r.targetId)),
+    [relationships, visibleIds],
   );
+
+  const drillable = (e: Element) => e.type === 'softwareSystem' || e.type === 'container';
 
   async function addElement(type: string) {
     const e = await api.createElement(pid, {
-      level,
+      level: viewLevel,
       type: type as ElementType,
       name: 'New ' + TYPE_LABEL[type],
+      parentId: drilledId,
       posX: 200 + elements.length * 20,
       posY: 200 + elements.length * 20,
     });
@@ -93,7 +116,7 @@ export default function ModelPage() {
       sourceId,
       targetId,
       label: 'uses',
-      level,
+      level: viewLevel,
     });
     setRelationships((prev) => [...prev, r]);
   }
@@ -107,6 +130,8 @@ export default function ModelPage() {
   }
 
   const selectedElement = elements.find((e) => String(e.id) === selectedId) || null;
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const selectedEdge = relationships.find((r) => String(r.id) === selectedEdgeId) || null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -117,15 +142,31 @@ export default function ModelPage() {
         <strong>{project?.name || '…'}</strong>
         <span className="muted" style={{ fontSize: 12 }}>{project?.description}</span>
         <div className="grow" />
-        <div className="levels">
-          {[1, 2, 3].map((l) => (
-            <button key={l} className={level === l ? 'active' : ''} onClick={() => setLevel(l)}>
-              {l} {LEVEL_NAME[l]}
+        <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+          <button
+            className={drilledId === null ? 'active' : ''}
+            onClick={() => setDrilledId(null)}
+          >
+            Context
+          </button>
+          {breadcrumb.map((c) => (
+            <button
+              key={c.id}
+              className={drilledId === c.id ? 'active' : ''}
+              onClick={() => setDrilledId(c.id)}
+            >
+              {c.name}
             </button>
           ))}
+          {drilledElement && (
+            <span className="muted" style={{ fontSize: 12 }}>
+              ← 点击上面可返回外层
+            </span>
+          )}
         </div>
+        <span className="muted" style={{ fontSize: 12 }}>当前层级：{LEVEL_NAME[viewLevel]}</span>
         <span style={{ width: 8 }} />
-        {TYPES[level].map((t) => (
+        {TYPES[viewLevel].map((t) => (
           <button key={t} className="primary" onClick={() => addElement(t)}>
             + {TYPE_LABEL[t]}
           </button>
@@ -138,21 +179,55 @@ export default function ModelPage() {
             elements={visibleElements}
             relationships={visibleRelationships}
             onSelect={setSelectedId}
+            onSelectEdge={setSelectedEdgeId}
             onAddEdge={addEdge}
             onMoveElement={moveElement}
           />
         </div>
         <aside style={{ width: 320, borderLeft: '1px solid #e5e7eb', background: '#fff', overflow: 'auto' }}>
-          <Inspector
-            element={selectedElement}
-            onSave={async (e) => {
-              const updated = await api.updateElement(e.id, { ...e });
-              const id = updated && updated.id ? updated.id : e.id;
-              setSelectedId(String(id));
-              setElements((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
-            }}
-            onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }}
-          />
+          {selectedEdge ? (
+            <EdgeInspector
+              edge={selectedEdge}
+              elements={elements}
+              onSave={async (e) => {
+                const updated = await api.updateRelationship(e.id, { ...e });
+                setRelationships((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
+                setSelectedEdgeId(String(updated && updated.id ? updated.id : e.id));
+              }}
+              onDelete={async (eid) => { await api.deleteRelationship(eid); setSelectedEdgeId(null); reload(); }}
+            />
+          ) : (
+            <Inspector
+              element={selectedElement}
+              canDrill={!!selectedElement && drillable(selectedElement)}
+              onDrill={() => selectedElement && setDrilledId(selectedElement.id)}
+              onAiDesign={async () => {
+                if (!selectedElement) return;
+                try {
+                  const r = await api.aiDesign(pid, { name: selectedElement.name, type: selectedElement.type, description: selectedElement.description });
+                  if (r.draft && r.draft.elements?.length) {
+                    const res = await api.aiApply(pid, r.draft);
+                    // eslint-disable-next-line no-alert
+                    alert(`AI 已生成该块的详细结构：${res.elements} 个元素、${res.relationships} 条关系`);
+                    reload();
+                  } else {
+                    // eslint-disable-next-line no-alert
+                    alert('AI 未识别出结构，请重试或检查 AI 配置');
+                  }
+                } catch (err: any) {
+                  // eslint-disable-next-line no-alert
+                  alert((err as Error).message || 'AI 设计失败');
+                }
+              }}
+              onSave={async (e) => {
+                const updated = await api.updateElement(e.id, { ...e });
+                const id = updated && updated.id ? updated.id : e.id;
+                setSelectedId(String(id));
+                setElements((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
+              }}
+              onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }}
+            />
+          )}
         </aside>
       </div>
 
@@ -200,7 +275,7 @@ export default function ModelPage() {
 }
 
 // ---- Inspector ----
-function Inspector({ element, onSave, onDelete }: { element: Element | null; onSave: (e: Element) => void; onDelete: (id: number) => void }) {
+function Inspector({ element, canDrill, onDrill, onAiDesign, onSave, onDelete }: { element: Element | null; canDrill: boolean; onDrill: () => void; onAiDesign: () => void; onSave: (e: Element) => void; onDelete: (id: number) => void }) {
   const [form, setForm] = useState<Element | null>(null);
   useEffect(() => setForm(element), [element]);
   if (!element || !form)
@@ -232,6 +307,43 @@ function Inspector({ element, onSave, onDelete }: { element: Element | null; onS
         <option value={2}>Container</option>
         <option value={3}>Component</option>
       </select>
+      <div className="row" style={{ marginTop: 12, flexWrap: 'wrap', gap: 6 }}>
+        {canDrill && (
+          <button className="primary" onClick={onDrill}>
+            进入内部设计
+          </button>
+        )}
+        <button onClick={onAiDesign}>AI 生成该块详细结构</button>
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="primary" onClick={() => onSave(form)}>保存</button>
+        <button className="danger" onClick={() => onDelete(form.id)}>删除</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- 连线（关系）检查器 ----
+function EdgeInspector({ edge, elements, onSave, onDelete }: { edge: Relationship; elements: Element[]; onSave: (e: Relationship) => void; onDelete: (id: number) => void }) {
+  const [form, setForm] = useState<Relationship | null>(null);
+  useEffect(() => setForm(edge), [edge]);
+  if (!form)
+    return <div style={{ padding: 20 }} className="muted">选中连接线后可编辑交互信息。</div>;
+  const set = (k: keyof Relationship, v: any) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const nameOf = (id: number) => elements.find((e) => e.id === id)?.name || `#${id}`;
+  return (
+    <div style={{ padding: 16 }}>
+      <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+        {nameOf(form.sourceId)} → {nameOf(form.targetId)}
+      </div>
+      <label>交互内容</label>
+      <input value={form.interaction} placeholder="如：下单、查询、发事件" onChange={(e) => set('interaction', e.target.value)} />
+      <label>通信协议</label>
+      <input value={form.protocol} placeholder="如：REST/HTTP、gRPC、MQ" onChange={(e) => set('protocol', e.target.value)} />
+      <label>补充说明</label>
+      <textarea rows={2} value={form.description} placeholder="可选" onChange={(e) => set('description', e.target.value)} />
+      <label>标签</label>
+      <input value={form.label} onChange={(e) => set('label', e.target.value)} />
       <div className="row" style={{ marginTop: 12 }}>
         <button className="primary" onClick={() => onSave(form)}>保存</button>
         <button className="danger" onClick={() => onDelete(form.id)}>删除</button>
@@ -714,7 +826,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
         {draft && (
           <div className="panel" style={{ marginTop: 8 }}>
             <div className="row">
-              <span style={{ fontWeight: 600 }}>识别到 {draft.elements.length} 元素、{draft.relationships.length} 关系</span>
+              <span style={{ fontWeight: 600 }}>
+                识别到 {draft.elements?.length ?? 0} 元素、{draft.relationships?.length ?? 0} 关系
+              </span>
               <button className="primary" onClick={apply} disabled={busy}>应用到画布</button>
             </div>
             {applied && <div className="muted" style={{ marginTop: 6, color: '#16a34a' }}>已应用，可在画布查看。</div>}

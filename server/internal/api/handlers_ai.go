@@ -219,6 +219,36 @@ type aiEnrichReq struct {
 	Type        string `json:"type"`
 }
 
+// aiDesignElement 为选中元素生成其内部详细结构（子元素），draft 中元素 parent 填该元素名。
+type aiDesignReq struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+func aiDesignElement(r *ghttp.Request) {
+	pid := idOf(r, "id")
+	var req aiDesignReq
+	if err := r.Parse(&req); err != nil {
+		fail(r, 51, err.Error())
+		return
+	}
+	if req.Name == "" {
+		fail(r, 51, "请选择元素")
+		return
+	}
+	if err := store.RequireProject(r.Context(), pid); err != nil {
+		fail(r, 404, err.Error())
+		return
+	}
+	text, err := ai.Chat(r.Context(), buildDesignPrompt(req.Type, req.Name, req.Description))
+	if err != nil {
+		fail(r, 500, "AI 设计失败: "+err.Error())
+		return
+	}
+	ok(r, ghttpData{"text": text, "draft": parseDraft(text)})
+}
+
 func aiEnrichElement(r *ghttp.Request) {
 	pid := idOf(r, "id")
 	var req aiEnrichReq
@@ -260,6 +290,22 @@ func buildEnrichPrompt(typ, name, desc string) string {
 元素类型：` + typ + `
 元素名称：` + name + `
 当前描述：` + desc
+}
+
+func buildDesignPrompt(typ, name, desc string) string {
+	childType := "container/component"
+	if typ == "softwareSystem" {
+		childType = "container"
+	} else if typ == "container" {
+		childType = "component"
+	}
+	return `请为下面这个 C4 元素设计其【内部】的详细架构结构（即它的下一层元素）。
+只输出 JSON（不要多余解释）：
+{"elements":[{"type":"` + childType + `","name":"","description":"","technology":"","level":1|2|3,"parent":"` + name + `"}],"relationships":[{"source":"源名称","target":"目标名称","label":"交互说明"}]}
+要求：所有子元素的 parent 一律填「` + name + `」；type 取 ` + childType + `；level 取父元素层级+1；元素命名简洁；只输出这些子元素的 JSON，不要输出父元素本身。
+` + "父元素类型：" + typ + `
+父元素名称：` + name + `
+父元素描述：` + desc
 }
 
 // ---- 需求 Markdown 导入 ----

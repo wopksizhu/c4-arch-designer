@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS relationships (
 	source_id INTEGER NOT NULL,
 	target_id INTEGER NOT NULL,
 	label TEXT NOT NULL DEFAULT '',
+	interaction TEXT NOT NULL DEFAULT '',
+	protocol TEXT NOT NULL DEFAULT '',
 	description TEXT NOT NULL DEFAULT '',
 	technology TEXT NOT NULL DEFAULT '',
 	level INTEGER NOT NULL DEFAULT 1,
@@ -115,6 +117,13 @@ func Init(ctx context.Context) error {
 	}
 	if _, err := db.Exec(ctx, schema); err != nil {
 		return fmt.Errorf("migrate schema failed: %w", err)
+	}
+	// 轻量迁移：为已存在的关系表补缺失列（SQLite 重复 ADD COLUMN 会报错，故忽略）
+	for _, alter := range []string{
+		"ALTER TABLE relationships ADD COLUMN interaction TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE relationships ADD COLUMN protocol TEXT NOT NULL DEFAULT ''",
+	} {
+		_, _ = db.Exec(ctx, alter)
 	}
 	return nil
 }

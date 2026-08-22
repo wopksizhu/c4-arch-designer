@@ -49,6 +49,7 @@ type Props = {
   elements: Element[];
   relationships: Relationship[];
   onSelect: (id: string | null) => void;
+  onSelectEdge: (id: string | null) => void;
   onAddEdge: (sourceId: number, targetId: number) => void;
   onMoveElement: (id: number, x: number, y: number) => void;
 };
@@ -57,6 +58,7 @@ export default function C4Canvas({
   elements,
   relationships,
   onSelect,
+  onSelectEdge,
   onAddEdge,
   onMoveElement,
 }: Props) {
@@ -76,13 +78,17 @@ export default function C4Canvas({
     () =>
       relationships
         .filter((r) => visible.has(String(r.sourceId)) && visible.has(String(r.targetId)))
-        .map((r) => ({
-          id: String(r.id),
-          source: String(r.sourceId),
-          target: String(r.targetId),
-          label: r.label || 'uses',
-          type: 'smoothstep',
-        })),
+        .map((r) => {
+          const base = r.interaction || r.label || 'uses';
+          const label = r.protocol ? `${base} · ${r.protocol}` : base;
+          return {
+            id: String(r.id),
+            source: String(r.sourceId),
+            target: String(r.targetId),
+            label,
+            type: 'smoothstep',
+          };
+        }),
     [relationships, visible],
   );
 
@@ -111,8 +117,18 @@ export default function C4Canvas({
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
-      onNodeClick={(_e, node) => onSelect(node.id)}
-      onPaneClick={() => onSelect(null)}
+      onEdgeClick={(_e, edge) => {
+        onSelect(null);
+        onSelectEdge(edge.id);
+      }}
+      onNodeClick={(_e, node) => {
+        onSelect(node.id);
+        onSelectEdge(null);
+      }}
+      onPaneClick={() => {
+        onSelect(null);
+        onSelectEdge(null);
+      }}
       onNodeDragStop={onNodeDragStop}
       nodeTypes={nodeTypes}
       fitView
