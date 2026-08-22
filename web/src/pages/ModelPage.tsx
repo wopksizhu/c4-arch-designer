@@ -239,6 +239,8 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
   const [prio, setPrio] = useState('medium');
   const [showImport, setShowImport] = useState(false);
   const [md, setMd] = useState('');
+  const [showCsv, setShowCsv] = useState(false);
+  const [csv, setCsv] = useState('');
 
   async function add() {
     if (!title.trim()) return;
@@ -255,6 +257,16 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
     alert(`已导入 ${r.created} 条需求`);
     setMd('');
     setShowImport(false);
+    onChanged();
+  }
+
+  async function importCsv() {
+    if (!csv.trim()) return;
+    const r = await api.importRequirementsCsv(pid, csv);
+    // eslint-disable-next-line no-alert
+    alert(`已导入 ${r.created} 条需求`);
+    setCsv('');
+    setShowCsv(false);
     onChanged();
   }
 
@@ -276,9 +288,14 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
               <button className="primary" onClick={importMd}>导入</button>
             </span>
           )}
+          <button onClick={() => setShowCsv(!showCsv)}>导入 CSV</button>
+          {showCsv && <button className="primary" onClick={importCsv}>导入</button>}
         </div>
         {showImport && (
           <textarea rows={4} placeholder="粘贴 Markdown 需求（标题/列表行作为需求，支持 [R1] 编号）…" value={md} onChange={(e) => setMd(e.target.value)} style={{ marginBottom: 8 }} />
+        )}
+        {showCsv && (
+          <textarea rows={4} placeholder={"粘贴 CSV：表头 code,title,description,priority,status,tags\n示例：R1,用户下单,支持下单,high,active"} value={csv} onChange={(e) => setCsv(e.target.value)} style={{ marginBottom: 8 }} />
         )}
         <div className="row">
           <input placeholder="编号（可选）" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 90 }} />
@@ -515,6 +532,9 @@ function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
   const [validateOut, setValidateOut] = useState('');
   const [busy, setBusy] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [dsl, setDsl] = useState('');
+  const [ruleIssues, setRuleIssues] = useState<{ type: string; message: string }[]>([]);
+  const [showDsl, setShowDsl] = useState(false);
 
   async function gen() {
     setBusy(true);
@@ -546,6 +566,28 @@ function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
       const r = await api.aiValidate(pid, 'all');
       setValidateOut(r.text);
       setIssues(r.issues || []);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function checkRules() {
+    setBusy(true);
+    try {
+      setRuleIssues(await api.rulesValidate(pid));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function importDsl() {
+    if (!dsl.trim()) return;
+    setBusy(true);
+    try {
+      const r = await api.importDSL(pid, dsl);
+      // eslint-disable-next-line no-alert
+      alert(`已导入 ${r.elements} 个元素、${r.relationships} 条关系`);
+      setDsl('');
+      setShowDsl(false);
+      onApply();
     } finally {
       setBusy(false);
     }
@@ -596,6 +638,32 @@ function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
         <button onClick={() => download('dsl')}>Structurizr DSL</button>
         <button onClick={() => download('json')}>JSON</button>
         <button onClick={() => download('markdown')}>Markdown</button>
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <div className="row">
+          <button onClick={() => setShowDsl(!showDsl)}>导入 Structurizr DSL</button>
+          {showDsl && <button className="primary" onClick={importDsl} disabled={busy}>导入</button>}
+          <button onClick={checkRules} disabled={busy}>静态校验（规则引擎）</button>
+        </div>
+        {showDsl && (
+          <textarea
+            rows={4}
+            placeholder={'粘贴 Structurizr DSL：\nworkspace "X" {\n  model {\n    softwareSystem "订单系统" {\n      container "库存服务"\n    }\n    "库存服务" -> "支付服务" "调用"\n  }\n}'}
+            value={dsl}
+            onChange={(e) => setDsl(e.target.value)}
+            style={{ marginTop: 8 }}
+          />
+        )}
+        {ruleIssues.length > 0 && (
+          <div className="list" style={{ marginTop: 8 }}>
+            {ruleIssues.map((it, i) => (
+              <div key={i} className="card" style={{ fontSize: 13 }}>
+                <span className="muted" style={{ marginRight: 6 }}>[{it.type}]</span>
+                {it.message}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

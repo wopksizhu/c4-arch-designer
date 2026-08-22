@@ -104,3 +104,17 @@ export const importRequirements = (pid: number, content: string) =>
     method: 'POST',
     body: JSON.stringify({ content }),
   });
+
+// ---- dsl / csv / rules ----
+export const importDSL = (pid: number, content: string) =>
+  request<{ elements: number; relationships: number }>(`/projects/${pid}/import/dsl`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+export const importRequirementsCsv = (pid: number, content: string) =>
+  request<{ created: number }>(`/projects/${pid}/requirements/import/csv`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+export const rulesValidate = (pid: number) =>
+  request<{ type: string; message: string }[]>(`/projects/${pid}/validate/rules`);
