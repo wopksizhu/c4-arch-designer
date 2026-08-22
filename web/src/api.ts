@@ -1,4 +1,5 @@
 import type {
+  AiDraft,
   Element,
   ImpactResult,
   Project,
@@ -82,6 +83,24 @@ export const exportProject = (pid: number, format: string) =>
 
 // ---- ai ----
 export const aiGenerate = (pid: number, text: string) =>
-  request<{ text: string }>(`/projects/${pid}/ai/generate`, { method: 'POST', body: JSON.stringify({ text }) });
+  request<{ text: string; draft: AiDraft | null }>(`/projects/${pid}/ai/generate`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+export const aiApply = (pid: number, draft: AiDraft) =>
+  request<{ elements: number; relationships: number }>(`/projects/${pid}/ai/apply`, {
+    method: 'POST',
+    body: JSON.stringify(draft),
+  });
 export const aiValidate = (pid: number, mode = 'all') =>
-  request<{ text: string }>(`/projects/${pid}/ai/validate`, { method: 'POST', body: JSON.stringify({ mode }) });
+  request<{ text: string; issues: string[] }>(`/projects/${pid}/ai/validate`, {
+    method: 'POST',
+    body: JSON.stringify({ mode }),
+  });
+
+// ---- requirements import ----
+export const importRequirements = (pid: number, content: string) =>
+  request<{ created: number }>(`/projects/${pid}/requirements/import`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });

@@ -143,6 +143,12 @@ func DeleteElement(ctx context.Context, id int64) error {
 	return err
 }
 
+// SetElementParent 设置元素的父元素。
+func SetElementParent(ctx context.Context, id, parentId int64) error {
+	_, err := g.DB().Exec(ctx, "UPDATE elements SET parent_id=? WHERE id=?", parentId, id)
+	return err
+}
+
 // ---- Relationship ----
 
 func ListRelationships(ctx context.Context, projectId int64) ([]model.Relationship, error) {

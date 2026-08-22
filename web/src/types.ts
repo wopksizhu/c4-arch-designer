@@ -95,3 +95,23 @@ export interface ImpactResult {
   affected: ImpactNode[];
   chains: ImpactNode[][];
 }
+
+export interface AiDraftElement {
+  type: string;
+  name: string;
+  description: string;
+  technology: string;
+  level: number;
+  parent: string;
+}
+
+export interface AiDraftRel {
+  source: string;
+  target: string;
+  label: string;
+}
+
+export interface AiDraft {
+  elements: AiDraftElement[];
+  relationships: AiDraftRel[];
+}

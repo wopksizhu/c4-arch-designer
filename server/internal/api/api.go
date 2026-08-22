@@ -20,6 +20,7 @@ func Register(s *ghttp.Server) {
 			p.POST("/{id}/relationships", createRelationship)
 			p.GET("/{id}/requirements", listRequirements)
 			p.POST("/{id}/requirements", createRequirement)
+			p.POST("/{id}/requirements/import", importRequirements)
 			p.GET("/{id}/prototypes", listPrototypes)
 			p.POST("/{id}/prototypes", createPrototype)
 			p.GET("/{id}/tracelinks", listTraceLinks)
@@ -29,6 +30,7 @@ func Register(s *ghttp.Server) {
 			p.GET("/{id}/impact", impactAnalysis)
 			p.GET("/{id}/export", exportProject)
 			p.POST("/{id}/ai/generate", aiGenerate)
+			p.POST("/{id}/ai/apply", aiApply)
 			p.POST("/{id}/ai/validate", aiValidate)
 		})
 

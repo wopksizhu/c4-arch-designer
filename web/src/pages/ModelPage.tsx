@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import * as api from '../api';
 import C4Canvas from '../components/C4Canvas';
 import type {
+  AiDraft,
   Element,
   ElementType,
   ImpactResult,
@@ -182,7 +183,7 @@ export default function ModelPage() {
           )}
           {activeTab === 'matrix' && <MatrixTab pid={pid} />}
           {activeTab === 'impact' && <ImpactTab pid={pid} elements={elements} requirements={requirements} />}
-          {activeTab === 'ai' && <AiTab pid={pid} />}
+          {activeTab === 'ai' && <AiTab pid={pid} onApply={reload} />}
         </div>
       </div>
     </div>
@@ -236,6 +237,8 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [prio, setPrio] = useState('medium');
+  const [showImport, setShowImport] = useState(false);
+  const [md, setMd] = useState('');
 
   async function add() {
     if (!title.trim()) return;
@@ -245,11 +248,38 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
     onChanged();
   }
 
+  async function importMd() {
+    if (!md.trim()) return;
+    const r = await api.importRequirements(pid, md);
+    // eslint-disable-next-line no-alert
+    alert(`已导入 ${r.created} 条需求`);
+    setMd('');
+    setShowImport(false);
+    onChanged();
+  }
+
+  async function importMdFile(e: any) {
+    const f = e.target.files?.[0];
+    if (f) setMd(await f.text());
+  }
+
   const linksOf = (reqId: number) => traceLinks.filter((l) => l.fromType === 'requirement' && l.fromId === reqId);
 
   return (
     <div className="grid2">
       <div>
+        <div className="row" style={{ marginBottom: 8 }}>
+          <button onClick={() => setShowImport(!showImport)}>导入 Markdown</button>
+          {showImport && (
+            <span className="row">
+              <input type="file" accept=".md,.markdown,.txt" onChange={importMdFile} />
+              <button className="primary" onClick={importMd}>导入</button>
+            </span>
+          )}
+        </div>
+        {showImport && (
+          <textarea rows={4} placeholder="粘贴 Markdown 需求（标题/列表行作为需求，支持 [R1] 编号）…" value={md} onChange={(e) => setMd(e.target.value)} style={{ marginBottom: 8 }} />
+        )}
         <div className="row">
           <input placeholder="编号（可选）" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 90 }} />
           <input placeholder="标题" value={title} onChange={(e) => setTitle(e.target.value)} className="grow" />
@@ -477,17 +507,35 @@ function ImpactTab({ pid, elements, requirements }: { pid: number; elements: Ele
 }
 
 // ---- AI 与导出 ----
-function AiTab({ pid }: { pid: number }) {
+function AiTab({ pid, onApply }: { pid: number; onApply: () => void }) {
   const [text, setText] = useState('');
   const [aiOut, setAiOut] = useState('');
+  const [draft, setDraft] = useState<AiDraft | null>(null);
+  const [issues, setIssues] = useState<string[]>([]);
   const [validateOut, setValidateOut] = useState('');
   const [busy, setBusy] = useState(false);
+  const [applied, setApplied] = useState(false);
 
   async function gen() {
     setBusy(true);
+    setApplied(false);
     try {
       const r = await api.aiGenerate(pid, text);
       setAiOut(r.text);
+      setDraft(r.draft);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function apply() {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      const r = await api.aiApply(pid, draft);
+      setApplied(true);
+      onApply();
+      // eslint-disable-next-line no-alert
+      alert(`已应用 ${r.elements} 个元素、${r.relationships} 条关系`);
     } finally {
       setBusy(false);
     }
@@ -497,6 +545,7 @@ function AiTab({ pid }: { pid: number }) {
     try {
       const r = await api.aiValidate(pid, 'all');
       setValidateOut(r.text);
+      setIssues(r.issues || []);
     } finally {
       setBusy(false);
     }
@@ -515,12 +564,29 @@ function AiTab({ pid }: { pid: number }) {
       <div>
         <textarea rows={4} placeholder="粘贴需求/一段描述…" value={text} onChange={(e) => setText(e.target.value)} />
         <button className="primary" onClick={gen} disabled={busy}>生成 C4 初稿</button>
+        {draft && (
+          <div className="panel" style={{ marginTop: 8 }}>
+            <div className="row">
+              <span style={{ fontWeight: 600 }}>识别到 {draft.elements.length} 元素、{draft.relationships.length} 关系</span>
+              <button className="primary" onClick={apply} disabled={busy}>应用到画布</button>
+            </div>
+            {applied && <div className="muted" style={{ marginTop: 6, color: '#16a34a' }}>已应用，可在画布查看。</div>}
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>AI 结果仅作初稿，应用后仍可编辑。</div>
+          </div>
+        )}
         {aiOut && (
           <pre style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: 12, marginTop: 8 }}>{aiOut}</pre>
         )}
       </div>
       <div>
         <button onClick={val} disabled={busy}>AI 一致性校验</button>
+        {issues.length > 0 && (
+          <div className="list" style={{ marginTop: 8 }}>
+            {issues.map((it, i) => (
+              <div key={i} className="card" style={{ fontSize: 13 }}>{it}</div>
+            ))}
+          </div>
+        )}
         {validateOut && (
           <pre style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: 12, marginTop: 8 }}>{validateOut}</pre>
         )}
