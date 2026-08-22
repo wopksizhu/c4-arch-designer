@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
 import ProjectsPage from './pages/ProjectsPage';
 import ModelPage from './pages/ModelPage';
+import HelpPanel from './components/HelpPanel';
 
 export default function App() {
+  const [help, setHelp] = useState(false);
   return (
     <div className="app">
       <div className="topbar">
@@ -12,6 +15,8 @@ export default function App() {
         <span className="muted" style={{ fontSize: 12 }}>
           C4 架构设计 · 需求 / 原型 / 追溯
         </span>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => setHelp(true)}>使用说明</button>
       </div>
       <div className="body">
         <Routes>
@@ -19,6 +24,7 @@ export default function App() {
           <Route path="/project/:id" element={<ModelPage />} />
         </Routes>
       </div>
+      {help && <HelpPanel onClose={() => setHelp(false)} />}
     </div>
   );
 }

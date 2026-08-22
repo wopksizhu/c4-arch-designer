@@ -143,7 +143,16 @@ export default function ModelPage() {
           />
         </div>
         <aside style={{ width: 320, borderLeft: '1px solid #e5e7eb', background: '#fff', overflow: 'auto' }}>
-          <Inspector element={selectedElement} onSave={async (e) => { await api.updateElement(e.id, e); reload(); }} onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }} />
+          <Inspector
+            element={selectedElement}
+            onSave={async (e) => {
+              const updated = await api.updateElement(e.id, { ...e });
+              const id = updated && updated.id ? updated.id : e.id;
+              setSelectedId(String(id));
+              setElements((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
+            }}
+            onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }}
+          />
         </aside>
       </div>
 

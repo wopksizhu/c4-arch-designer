@@ -297,7 +297,12 @@ func parseDraft(s string) *AiDraft {
 	}
 	var d AiDraft
 	if err := json.Unmarshal([]byte(body), &d); err != nil {
-		return nil
+		// 容忍尾随逗号等轻量 JSON 瑕疵
+		cleaned := regexp.MustCompile(`,\s*}`).ReplaceAllString(body, `}`)
+		cleaned = regexp.MustCompile(`,\s*]`).ReplaceAllString(cleaned, `]`)
+		if err2 := json.Unmarshal([]byte(cleaned), &d); err2 != nil {
+			return nil
+		}
 	}
 	if len(d.Elements) == 0 {
 		return nil
@@ -333,16 +338,48 @@ func splitLines(s string) []string {
 }
 
 func extractJSON(s string) string {
-	re := regexp.MustCompile("(?s)```json?\\s*(.*?)```")
+	// 去掉 markdown 代码围栏
+	re := regexp.MustCompile("(?s)```[a-zA-Z]*\\s*(.*?)```")
 	if m := re.FindStringSubmatch(s); m != nil {
 		s = m[1]
 	}
-	i := strings.Index(s, "{")
-	j := strings.LastIndex(s, "}")
-	if i < 0 || j < i {
+	// 平衡括号扫描：取最外层 {...}，处理字符串内的大括号
+	start := strings.Index(s, "{")
+	if start < 0 {
 		return ""
 	}
-	return s[i : j+1]
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return ""
 }
 
 func levelForType(t string) int {
