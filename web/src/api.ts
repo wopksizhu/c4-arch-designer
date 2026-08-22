@@ -118,3 +118,12 @@ export const importRequirementsCsv = (pid: number, content: string) =>
   });
 export const rulesValidate = (pid: number) =>
   request<{ type: string; message: string }[]>(`/projects/${pid}/validate/rules`);
+
+export async function importRequirementsExcel(pid: number, file: File): Promise<{ created: number }> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`${BASE}/projects/${pid}/requirements/import/excel`, { method: 'POST', body: fd });
+  const body = await res.json();
+  if (res.status >= 400 || (body && body.code !== 0)) throw new Error(body?.message || '导入失败');
+  return body.data as { created: number };
+}

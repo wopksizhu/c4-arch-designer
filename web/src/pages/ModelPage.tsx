@@ -244,30 +244,61 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
 
   async function add() {
     if (!title.trim()) return;
-    await api.createRequirement(pid, { code, title, description: desc, priority: prio });
-    setTitle('');
-    setDesc('');
-    onChanged();
+    try {
+      await api.createRequirement(pid, { code, title, description: desc, priority: prio });
+      setTitle('');
+      setDesc('');
+      onChanged();
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '添加失败');
+    }
   }
 
   async function importMd() {
     if (!md.trim()) return;
-    const r = await api.importRequirements(pid, md);
-    // eslint-disable-next-line no-alert
-    alert(`已导入 ${r.created} 条需求`);
-    setMd('');
-    setShowImport(false);
-    onChanged();
+    try {
+      const r = await api.importRequirements(pid, md);
+      // eslint-disable-next-line no-alert
+      alert(`已导入 ${r.created} 条需求`);
+      setMd('');
+      setShowImport(false);
+      onChanged();
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '导入失败');
+    }
   }
 
   async function importCsv() {
     if (!csv.trim()) return;
-    const r = await api.importRequirementsCsv(pid, csv);
-    // eslint-disable-next-line no-alert
-    alert(`已导入 ${r.created} 条需求`);
-    setCsv('');
-    setShowCsv(false);
-    onChanged();
+    try {
+      const r = await api.importRequirementsCsv(pid, csv);
+      // eslint-disable-next-line no-alert
+      alert(`已导入 ${r.created} 条需求`);
+      setCsv('');
+      setShowCsv(false);
+      onChanged();
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '导入失败');
+    }
+  }
+
+  async function importXlsx(e: any) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const r = await api.importRequirementsExcel(pid, f);
+      // eslint-disable-next-line no-alert
+      alert(`已导入 ${r.created} 条需求`);
+      onChanged();
+    } catch (err: any) {
+      // eslint-disable-next-line no-alert
+      alert((err as Error).message || '导入失败');
+    } finally {
+      e.target.value = '';
+    }
   }
 
   async function importMdFile(e: any) {
@@ -290,6 +321,10 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
           )}
           <button onClick={() => setShowCsv(!showCsv)}>导入 CSV</button>
           {showCsv && <button className="primary" onClick={importCsv}>导入</button>}
+          <label className="row" style={{ gap: 4 }}>
+            导入 Excel
+            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={importXlsx} />
+          </label>
         </div>
         {showImport && (
           <textarea rows={4} placeholder="粘贴 Markdown 需求（标题/列表行作为需求，支持 [R1] 编号）…" value={md} onChange={(e) => setMd(e.target.value)} style={{ marginBottom: 8 }} />
@@ -543,6 +578,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
       const r = await api.aiGenerate(pid, text);
       setAiOut(r.text);
       setDraft(r.draft);
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '生成失败');
     } finally {
       setBusy(false);
     }
@@ -556,6 +594,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
       onApply();
       // eslint-disable-next-line no-alert
       alert(`已应用 ${r.elements} 个元素、${r.relationships} 条关系`);
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '采纳失败');
     } finally {
       setBusy(false);
     }
@@ -566,6 +607,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
       const r = await api.aiValidate(pid, 'all');
       setValidateOut(r.text);
       setIssues(r.issues || []);
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '校验失败');
     } finally {
       setBusy(false);
     }
@@ -574,6 +618,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
     setBusy(true);
     try {
       setRuleIssues(await api.rulesValidate(pid));
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '静态校验失败');
     } finally {
       setBusy(false);
     }
@@ -588,6 +635,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
       setDsl('');
       setShowDsl(false);
       onApply();
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || 'DSL 导入失败');
     } finally {
       setBusy(false);
     }

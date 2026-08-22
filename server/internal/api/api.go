@@ -31,6 +31,7 @@ func Register(s *ghttp.Server) {
 			p.GET("/{id}/export", exportProject)
 			p.POST("/{id}/import/dsl", importDSL)
 			p.POST("/{id}/requirements/import/csv", importCSVRequirements)
+			p.POST("/{id}/requirements/import/excel", importExcelRequirements)
 			p.GET("/{id}/validate/rules", rulesValidate)
 			p.POST("/{id}/ai/generate", aiGenerate)
 			p.POST("/{id}/ai/apply", aiApply)

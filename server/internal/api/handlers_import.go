@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/csv"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gogf/gf/v2/net/ghttp"
+	"github.com/xuri/excelize/v2"
 
 	"archlens/server/internal/dsl"
 	"archlens/server/internal/model"
@@ -97,6 +100,70 @@ func importCSVRequirements(r *ghttp.Request) {
 			Priority:    defPriority(get(rec, "priority")),
 			Status:      defStatus(get(rec, "status")),
 			Source:      "csv", Tags: get(rec, "tags"),
+		}
+		if _, err := store.CreateRequirement(r.Context(), req); err == nil {
+			count++
+		}
+	}
+	ok(r, ghttpData{"created": count})
+}
+
+// importExcelRequirements 导入 Excel 需求（multipart 上传 file）。表头同 CSV。
+func importExcelRequirements(r *ghttp.Request) {
+	pid := idOf(r, "id")
+	if err := store.RequireProject(r.Context(), pid); err != nil {
+		fail(r, 404, err.Error())
+		return
+	}
+	file := r.GetUploadFile("file")
+	if file == nil {
+		fail(r, 51, "请上传 Excel 文件")
+		return
+	}
+	tmpDir := filepath.Join("data", "tmp")
+	name, err := file.Save(tmpDir, true)
+	if err != nil {
+		fail(r, 500, "保存文件失败: "+err.Error())
+		return
+	}
+	full := filepath.Join(tmpDir, name)
+	defer os.Remove(full)
+
+	f, err := excelize.OpenFile(full)
+	if err != nil {
+		fail(r, 51, "Excel 解析失败: "+err.Error())
+		return
+	}
+	defer f.Close()
+
+	sheet := f.GetSheetName(0)
+	rows, err := f.GetRows(sheet)
+	if err != nil || len(rows) == 0 {
+		fail(r, 51, "Excel 为空或读取失败")
+		return
+	}
+
+	col := map[string]int{}
+	for i, h := range rows[0] {
+		col[strings.ToLower(strings.TrimSpace(h))] = i
+	}
+	get := func(rec []string, key string) string {
+		i, ok := col[key]
+		if !ok || i >= len(rec) {
+			return ""
+		}
+		return strings.TrimSpace(rec[i])
+	}
+	count := 0
+	for _, rec := range rows[1:] {
+		title := get(rec, "title")
+		if title == "" {
+			continue
+		}
+		req := &model.Requirement{
+			ProjectId: pid, Code: get(rec, "code"), Title: title, Description: get(rec, "description"),
+			Priority: defPriority(get(rec, "priority")), Status: defStatus(get(rec, "status")),
+			Source: "excel", Tags: get(rec, "tags"),
 		}
 		if _, err := store.CreateRequirement(r.Context(), req); err == nil {
 			count++
