@@ -31,13 +31,13 @@ export default function ProjectsPage() {
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="row">
           <input
-            placeholder="项目名称，如：电商平台"
+            placeholder="项目名称（必填），如：电商平台"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="grow"
+            style={{ flex: '1 1 240px', minWidth: 220 }}
             onKeyDown={(e) => e.key === 'Enter' && create()}
           />
-          <input placeholder="简介（可选）" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <input placeholder="简介（可选）" value={desc} onChange={(e) => setDesc(e.target.value)} style={{ flex: '0 1 200px' }} />
           <button className="primary" onClick={create}>
             新建
           </button>

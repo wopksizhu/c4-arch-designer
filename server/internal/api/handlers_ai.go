@@ -101,6 +101,7 @@ func aiApply(r *ghttp.Request) {
 	}
 
 	ids := map[string]int64{}
+	i := 0
 	for _, e := range d.Elements {
 		name := strings.TrimSpace(e.Name)
 		if name == "" {
@@ -116,12 +117,14 @@ func aiApply(r *ghttp.Request) {
 		id, err := store.CreateElement(r.Context(), &model.Element{
 			ProjectId: pid, Level: level, Type: normalizeType(e.Type),
 			Name: name, Description: e.Description, Technology: e.Technology,
+			PosX: 140 + float64(i%4)*240, PosY: 120 + float64(i/4)*170,
 		})
 		if err != nil {
 			fail(r, 500, err.Error())
 			return
 		}
 		ids[name] = id
+		i++
 	}
 
 	// 为带 parent 的扁平元素设置父级

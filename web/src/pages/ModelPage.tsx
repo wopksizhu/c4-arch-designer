@@ -77,7 +77,7 @@ export default function ModelPage() {
       const e = byId.get(cur);
       if (!e) break;
       chain.unshift({ id: e.id, name: e.name, type: e.type });
-      cur = e.parentId;
+      cur = e.parentId ?? null;
     }
     return chain;
   }, [drilledId, elements]);
@@ -87,7 +87,7 @@ export default function ModelPage() {
   const viewLevel = drilledElement ? drilledElement.level + 1 : 1;
 
   const visibleElements = useMemo(() => {
-    if (drilledId === null) return elements.filter((e) => e.parentId === null);
+    if (drilledId === null) return elements.filter((e) => (e.parentId ?? null) === null);
     return elements.filter((e) => e.parentId === drilledId);
   }, [elements, drilledId]);
 
