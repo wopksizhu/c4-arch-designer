@@ -97,6 +97,16 @@ export const aiValidate = (pid: number, mode = 'all') =>
     method: 'POST',
     body: JSON.stringify({ mode }),
   });
+export const aiCode = (pid: number, dir: string) =>
+  request<{ text: string; draft: AiDraft | null; summary: string }>(`/projects/${pid}/ai/code`, {
+    method: 'POST',
+    body: JSON.stringify({ dir }),
+  });
+export const aiEnrich = (pid: number, payload: { name: string; description: string; type: string }) =>
+  request<{ text: string }>(`/projects/${pid}/ai/enrich`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 
 // ---- requirements import ----
 export const importRequirements = (pid: number, content: string) =>

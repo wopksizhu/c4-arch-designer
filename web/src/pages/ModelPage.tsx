@@ -570,6 +570,9 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
   const [dsl, setDsl] = useState('');
   const [ruleIssues, setRuleIssues] = useState<{ type: string; message: string }[]>([]);
   const [showDsl, setShowDsl] = useState(false);
+  const [codeDir, setCodeDir] = useState('');
+  const [codeOut, setCodeOut] = useState('');
+  const [codeSummary, setCodeSummary] = useState('');
 
   async function gen() {
     setBusy(true);
@@ -642,6 +645,41 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
       setBusy(false);
     }
   }
+  async function inferCode() {
+    if (!codeDir.trim()) return;
+    setBusy(true);
+    setApplied(false);
+    try {
+      const r = await api.aiCode(pid, codeDir.trim());
+      setCodeOut(r.text);
+      setCodeSummary(r.summary || '');
+      setDraft(r.draft);
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || '代码推断失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function downloadPng() {
+    const el = document.querySelector('.react-flow') as HTMLElement | null;
+    if (!el) {
+      // eslint-disable-next-line no-alert
+      alert('请先切换到画布视图');
+      return;
+    }
+    try {
+      const { toPng } = await import('html-to-image');
+      const dataUrl = await toPng(el, { cacheBust: true, backgroundColor: '#f8fafc', pixelRatio: 2 });
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `archlens-${pid}.png`;
+      a.click();
+    } catch (e: any) {
+      // eslint-disable-next-line no-alert
+      alert((e as Error).message || 'PNG 导出失败');
+    }
+  }
   async function download(format: string) {
     const content = await api.exportProject(pid, format);
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -697,9 +735,23 @@ function AiTab({ pid, elements, relationships, onApply }: { pid: number; element
         <button onClick={() => download('json')}>JSON</button>
         <button onClick={() => download('markdown')}>Markdown</button>
         <button className="primary" onClick={downloadSvg}>SVG（当前层级）</button>
+        <button onClick={downloadPng}>PNG</button>
         <button onClick={() => download('html')}>HTML 报告</button>
       </div>
       <div style={{ gridColumn: '1 / -1' }}>
+        <div className="row" style={{ marginBottom: 8 }}>
+          <input placeholder="本地代码目录，如 D:\myapp（推断组件与依赖）" value={codeDir} onChange={(e) => setCodeDir(e.target.value)} className="grow" />
+          <button className="primary" onClick={inferCode} disabled={busy}>代码仓库推断</button>
+        </div>
+        {codeSummary && (
+          <details style={{ marginBottom: 8 }}>
+            <summary className="muted" style={{ fontSize: 12 }}>查看代码摘要</summary>
+            <pre style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: 11, maxHeight: 200, overflow: 'auto' }}>{codeSummary}</pre>
+          </details>
+        )}
+        {codeOut && (
+          <pre style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap', fontSize: 12, marginBottom: 8 }}>{codeOut}</pre>
+        )}
         <div className="row">
           <button onClick={() => setShowDsl(!showDsl)}>导入 Structurizr DSL</button>
           {showDsl && <button className="primary" onClick={importDsl} disabled={busy}>导入</button>}

@@ -11,6 +11,7 @@ import (
 	"archlens/server/internal/ai"
 	"archlens/server/internal/dsl"
 	"archlens/server/internal/model"
+	"archlens/server/internal/repo"
 	"archlens/server/internal/store"
 )
 
@@ -174,6 +175,91 @@ func aiValidate(r *ghttp.Request) {
 		return
 	}
 	ok(r, ghttpData{"text": text, "issues": parseIssues(text)})
+}
+
+// ---- AI 代码仓库推断 ----
+
+type aiCodeReq struct {
+	Dir string `json:"dir"`
+}
+
+func aiCodeFromRepo(r *ghttp.Request) {
+	pid := idOf(r, "id")
+	var req aiCodeReq
+	if err := r.Parse(&req); err != nil {
+		fail(r, 51, err.Error())
+		return
+	}
+	if req.Dir == "" {
+		fail(r, 51, "请提供代码目录路径")
+		return
+	}
+	if err := store.RequireProject(r.Context(), pid); err != nil {
+		fail(r, 404, err.Error())
+		return
+	}
+	summary, err := repo.Scan(r.Context(), req.Dir)
+	if err != nil {
+		fail(r, 400, "扫描失败: "+err.Error())
+		return
+	}
+	text, err := ai.Chat(r.Context(), buildCodePrompt(summary))
+	if err != nil {
+		fail(r, 500, "AI 调用失败: "+err.Error())
+		return
+	}
+	ok(r, ghttpData{"text": text, "draft": parseDraft(text), "summary": summary})
+}
+
+// ---- AI 元素补全 ----
+
+type aiEnrichReq struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+}
+
+func aiEnrichElement(r *ghttp.Request) {
+	pid := idOf(r, "id")
+	var req aiEnrichReq
+	if err := r.Parse(&req); err != nil {
+		fail(r, 51, err.Error())
+		return
+	}
+	if req.Name == "" {
+		fail(r, 51, "请选择元素")
+		return
+	}
+	if err := store.RequireProject(r.Context(), pid); err != nil {
+		fail(r, 404, err.Error())
+		return
+	}
+	text, err := ai.Chat(r.Context(), buildEnrichPrompt(req.Type, req.Name, req.Description))
+	if err != nil {
+		fail(r, 500, "AI 补全失败: "+err.Error())
+		return
+	}
+	ok(r, ghttpData{"text": text})
+}
+
+// ---- prompt ----
+
+func buildCodePrompt(summary string) string {
+	return `请根据以下代码仓库的目录结构与关键文件片段，用 C4 模型推断软件架构。
+只输出 JSON（不要多余解释）：
+{"elements":[{"type":"person|softwareSystem|container|component","name":"","description":"","technology":"","level":1|2|3,"parent":""}],"relationships":[{"source":"源名称","target":"目标名称","label":"关系说明"}]}
+从中识别可能的软件系统、容器（如 Web/后端/DB）、组件与依赖关系；level 1=Context,2=Container,3=Component。
+
+以下是代码摘要：
+` + summary
+}
+
+func buildEnrichPrompt(typ, name, desc string) string {
+	return `请给下面这个 C4 元素补全「描述」「技术栈」，并给出合理的关联关系建议。
+只输出 JSON（不要多余解释）：{"description":"...","technology":"...","relationships":["目标元素名:关系说明"]}
+元素类型：` + typ + `
+元素名称：` + name + `
+当前描述：` + desc
 }
 
 // ---- 需求 Markdown 导入 ----

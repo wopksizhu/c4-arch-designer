@@ -34,6 +34,8 @@ func Register(s *ghttp.Server) {
 			p.POST("/{id}/requirements/import/excel", importExcelRequirements)
 			p.GET("/{id}/validate/rules", rulesValidate)
 			p.POST("/{id}/ai/generate", aiGenerate)
+			p.POST("/{id}/ai/code", aiCodeFromRepo)
+			p.POST("/{id}/ai/enrich", aiEnrichElement)
 			p.POST("/{id}/ai/apply", aiApply)
 			p.POST("/{id}/ai/validate", aiValidate)
 		})
