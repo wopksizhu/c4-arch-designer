@@ -21,6 +21,7 @@ type C4NodeData = {
   description: string;
   elementType: string;
   context: boolean;
+  isParent: boolean;
   canExpand: boolean;
   expanded: boolean;
   canAdd: boolean;
@@ -49,7 +50,7 @@ function C4Node({ data, id }: NodeProps<C4NodeType>) {
   const cls = data?.elementType ? c4Cls[data.elementType] || '' : '';
   const label = data?.label || `#${id}`;
   return (
-    <div className={`c4-node ${cls} ${data?.context ? 'c4-context' : ''}`}>
+    <div className={`c4-node ${cls} ${data?.context ? 'c4-context' : ''} ${data?.isParent ? 'c4-parent' : ''}`}>
       <div className="kind">{kind}</div>
       <div className="name">{label}</div>
       {data?.description ? <div className="desc">{data.description}</div> : null}
@@ -79,22 +80,60 @@ interface BuildOpts {
   contextIds: Set<number>;
 }
 
-// 平面节点（不做 bounding-box 嵌套）：展开的父级子元素作为独立节点显示（由自动布局排列）
+const NODE_W = 200;
+const NODE_H = 100;
+const BOX_PAD = 60;
+const BOX_MIN_W = 340;
+const BOX_MIN_H = 240;
+
+// 稳定版包含：父元素以自身坐标为框左上角（不跳位），子元素以相对坐标画在框内，父框按子元素范围自适应
 function buildNodes(elements: Element[], o: BuildOpts): Node[] {
-  return elements.map((e) => ({
-    id: String(e.id),
-    type: 'c4',
-    position: { x: e.posX, y: e.posY },
-    data: {
-      label: e.name,
-      description: e.description,
-      elementType: e.type,
-      context: o.contextIds.has(e.id),
-      canExpand: o.hasChildren(e.id),
-      expanded: o.expanded.has(e.id),
-      canAdd: (e.type === 'softwareSystem' || e.type === 'container') && !o.hasChildren(e.id),
-    } as C4NodeData,
-  }));
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  const boxSize: Record<number, { w: number; h: number }> = {};
+  elements.forEach((e) => {
+    const p = e.parentId;
+    if (p != null && byId.has(p)) {
+      const parent = byId.get(p)!;
+      const rx = e.posX - parent.posX;
+      const ry = e.posY - parent.posY;
+      const b = boxSize[p] || (boxSize[p] = { w: 0, h: 0 });
+      b.w = Math.max(b.w, rx + NODE_W);
+      b.h = Math.max(b.h, ry + NODE_H);
+    }
+  });
+  return elements.map((e) => {
+    const isParent = !!boxSize[e.id];
+    const node: any = {
+      id: String(e.id),
+      type: 'c4',
+      position: { x: e.posX, y: e.posY },
+      data: {
+        label: e.name,
+        description: e.description,
+        elementType: e.type,
+        context: o.contextIds.has(e.id),
+        isParent,
+        canExpand: o.hasChildren(e.id),
+        expanded: o.expanded.has(e.id),
+        canAdd: (e.type === 'softwareSystem' || e.type === 'container') && !o.hasChildren(e.id),
+      },
+    };
+    const p = e.parentId;
+    if (p != null && byId.has(p)) {
+      const parent = byId.get(p)!;
+      node.parentId = String(p);
+      node.position = { x: e.posX - parent.posX, y: e.posY - parent.posY };
+      node.extent = 'parent';
+    }
+    const box = boxSize[e.id];
+    if (box) {
+      node.style = {
+        width: Math.max(BOX_MIN_W, box.w + BOX_PAD * 2),
+        height: Math.max(BOX_MIN_H, box.h + BOX_PAD * 2),
+      };
+    }
+    return node as Node;
+  });
 }
 
 type Props = {
