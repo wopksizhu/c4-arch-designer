@@ -35,15 +35,19 @@ test('添加软件系统并在画布显示', async ({ page }) => {
   await expect(page.getByText('New Software System')).toBeVisible();
 });
 
-test('层层钻取：进入系统→添加容器→返回 Context', async ({ page }) => {
+test('元素块展开/折叠：添加子容器→收起→展开', async ({ page }) => {
   await newProject(page);
   await page.getByRole('button', { name: '+ Software System' }).click();
   await expect(page.getByText('New Software System')).toBeVisible();
+  // 系统尚无子元素 → 点「+ 添加子元素」添加容器（会自动展开父级）
   await page.locator('.c4-drill').first().click();
-  await page.getByRole('button', { name: '+ Container' }).click();
   await expect(page.getByText('New Container')).toBeVisible();
-  await page.getByRole('button', { name: 'Context' }).click();
-  await expect(page.getByText('New Software System')).toBeVisible();
+  // 收起系统 → 子元素隐藏
+  await page.locator('.c4-toggle').first().click();
+  await expect(page.getByText('New Container')).toBeHidden();
+  // 再展开 → 子元素显示
+  await page.locator('.c4-toggle').first().click();
+  await expect(page.getByText('New Container')).toBeVisible();
 });
 
 test('需求页：新增需求并关联容器，追溯矩阵可见', async ({ page }) => {
@@ -51,7 +55,6 @@ test('需求页：新增需求并关联容器，追溯矩阵可见', async ({ pa
   // 建一个系统 + 一个容器
   await page.getByRole('button', { name: '+ Software System' }).click();
   await page.locator('.c4-drill').first().click();
-  await page.getByRole('button', { name: '+ Container' }).click();
   // 切到需求页
   await page.getByRole('button', { name: '需求' }).click();
   await page.getByPlaceholder('标题').fill('E2E 需求');

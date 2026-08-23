@@ -40,7 +40,7 @@ export default function ModelPage() {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [prototypes, setPrototypes] = useState<Prototype[]>([]);
   const [traceLinks, setTraceLinks] = useState<TraceLink[]>([]);
-  const [drilledId, setDrilledId] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [err, setErr] = useState('');
 
@@ -69,51 +69,40 @@ export default function ModelPage() {
     reload();
   }, [reload]);
 
-  // 钻取式 C4：breadcrumb 从当前钻取元素沿 parentId 上行到根
-  const breadcrumb = useMemo(() => {
-    let cur = drilledId;
-    const chain: { id: number; name: string; type: string }[] = [];
-    const byId = new Map(elements.map((e) => [e.id, e]));
-    while (cur !== null) {
-      const e = byId.get(cur);
-      if (!e) break;
-      chain.unshift({ id: e.id, name: e.name, type: e.type });
-      cur = e.parentId ?? null;
-    }
-    return chain;
-  }, [drilledId, elements]);
+  // 一张大图 + 元素块可展开/折叠：可见元素 = 根元素 + 所有“展开”父级的后代（递归）
+  const expand = (id: number) =>
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
-  // 当前视图层级：drillId 为 null = Context(1)；否则 = 钻取元素层级 + 1
-  const drilledElement = drilledId !== null ? elements.find((e) => e.id === drilledId) || null : null;
-  const viewLevel = drilledElement ? drilledElement.level + 1 : 1;
+  const hasChildren = useCallback((id: number) => elements.some((e) => e.parentId === id), [elements]);
 
-  const elementById = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
-
-  // 钻取式：父级作为边界框，子元素绘制在框内部；并显示与父级有信息交互的外部元素（信息交互层级追溯）
   const visibleElements = useMemo(() => {
-    if (drilledId === null) return elements.filter((e) => (e.parentId ?? null) === null);
-    const children = elements.filter((e) => e.parentId === drilledId);
-    const parent = elementById.get(drilledId);
-    const related = new Set<number>();
-    relationships.forEach((r) => {
-      if (r.sourceId === drilledId) related.add(r.targetId);
-      if (r.targetId === drilledId) related.add(r.sourceId);
+    const byParent = new Map<number, Element[]>();
+    const roots: Element[] = [];
+    elements.forEach((e) => {
+      if (e.parentId == null) roots.push(e);
+      else {
+        const arr = byParent.get(e.parentId) || [];
+        arr.push(e);
+        byParent.set(e.parentId, arr);
+      }
     });
-    const external = [...related]
-      .map((id) => elementById.get(id))
-      .filter((e): e is Element => !!e && e.id !== drilledId && e.parentId !== drilledId);
-    return parent ? [parent, ...children, ...external] : children;
-  }, [elements, drilledId, relationships, elementById]);
+    const out: Element[] = [];
+    const walk = (ids: Element[]) =>
+      ids.forEach((e) => {
+        out.push(e);
+        if (expanded.has(e.id)) walk(byParent.get(e.id) || []);
+      });
+    walk(roots);
+    return out;
+  }, [elements, expanded]);
 
-  const contextIds = useMemo(() => {
-    if (drilledId === null) return new Set<number>();
-    const ids = new Set<number>([drilledId]);
-    relationships.forEach((r) => {
-      if (r.sourceId === drilledId) ids.add(r.targetId);
-      if (r.targetId === drilledId) ids.add(r.sourceId);
-    });
-    return ids;
-  }, [drilledId, relationships]);
+  const contextIds = useMemo(() => new Set<number>(expanded), [expanded]);
+  const viewLevel = 1; // 顶栏添加为根层级
 
   const visibleIds = useMemo(() => new Set(visibleElements.map((e) => e.id)), [visibleElements]);
   const visibleRelationships = useMemo(
@@ -121,18 +110,27 @@ export default function ModelPage() {
     [relationships, visibleIds],
   );
 
-  const drillable = (e: Element) => e.type === 'softwareSystem' || e.type === 'container';
-
-  async function addElement(type: string) {
+  async function addElement(type: string, parentId?: number | null) {
+    const parent = parentId != null ? elements.find((e) => e.id === parentId) : null;
     const e = await api.createElement(pid, {
-      level: viewLevel,
+      level: parent ? parent.level + 1 : 1,
       type: type as ElementType,
       name: 'New ' + TYPE_LABEL[type],
-      parentId: drilledId,
+      parentId: parentId ?? null,
       posX: 200 + elements.length * 20,
       posY: 200 + elements.length * 20,
     });
     setElements((prev) => [...prev, e]);
+    if (parentId != null) setExpanded((prev) => new Set(prev).add(parentId));
+    return e;
+  }
+
+  // 为某元素添加子元素（类型由父级决定：System→Container，Container→Component）
+  async function addChild(parentId: number) {
+    const parent = elements.find((e) => e.id === parentId);
+    if (!parent) return;
+    const t = parent.type === 'softwareSystem' ? 'container' : 'component';
+    await addElement(t, parentId);
   }
 
   async function addEdge(sourceId: number, targetId: number) {
@@ -178,18 +176,13 @@ export default function ModelPage() {
               <Link to="/" className="muted" style={{ textDecoration: 'none' }}>← 返回</Link>
               <strong>{project?.name || '…'}</strong>
               <div className="grow" />
-              <div className="crumb">
-                <button className={drilledId === null ? 'active' : ''} onClick={() => setDrilledId(null)}>Context</button>
-                {breadcrumb.map((c) => (
-                  <button key={c.id} className={drilledId === c.id ? 'active' : ''} onClick={() => setDrilledId(c.id)}>{c.name}</button>
-                ))}
-                {drilledElement && <span className="muted" style={{ fontSize: 12 }}>← 点面包屑返回外层</span>}
-              </div>
-              <span className="muted" style={{ fontSize: 12 }}>层级 {LEVEL_NAME[viewLevel]}</span>
+              <span className="muted" style={{ fontSize: 12 }}>点元素上「展开」可查看内部，右键可添加/删除</span>
+              <button className="ghost sm" onClick={() => setExpanded(new Set(elements.filter((e) => hasChildren(e.id)).map((e) => e.id)))}>全部展开</button>
+              <button className="ghost sm" onClick={() => setExpanded(new Set())}>全部收起</button>
               <button className={`ghost sm ${showTree ? 'active' : ''}`} onClick={() => setShowTree(!showTree)}>元素结构</button>
               <span style={{ width: 8 }} />
               <div className="adds">
-                {TYPES[viewLevel].map((t) => (
+                {TYPES[1].map((t) => (
                   <button key={t} className="primary sm" onClick={() => addElement(t)}>+ {TYPE_LABEL[t]}</button>
                 ))}
               </div>
@@ -199,9 +192,9 @@ export default function ModelPage() {
                 <aside style={{ width: 250, borderRight: '1px solid var(--border)', background: 'var(--surface)', overflow: 'auto' }}>
                   <ElementTree
                     elements={elements}
-                    drilledId={drilledId}
+                    expanded={expanded}
                     onSelect={(id) => setSelectedId(String(id))}
-                    onDrill={setDrilledId}
+                    onExpand={expand}
                     onReparent={async (childId, newParentId) => {
                       const parent = newParentId != null ? elements.find((e) => e.id === newParentId) : null;
                       try {
@@ -220,15 +213,16 @@ export default function ModelPage() {
                   elements={visibleElements}
                   relationships={visibleRelationships}
                   contextIds={contextIds}
-                  drillable={drillable}
-                  onDrill={(id) => setDrilledId(id)}
+                  hasChildren={hasChildren}
+                  onToggleExpand={expand}
                   onSelect={setSelectedId}
                   onSelectEdge={setSelectedEdgeId}
                   onAddEdge={addEdge}
                   onMoveElement={moveElement}
                   onMoveElementCommit={commitElement}
-                  addTypes={TYPES[viewLevel]}
+                  addTypes={TYPES[1]}
                   onAddType={(t) => addElement(t)}
+                  onAddChild={(id) => addChild(id)}
                   onDelete={async (id) => {
                     if (!window.confirm('确定删除该元素？其下所有子元素、关系与追溯都会被删除。')) return;
                     await api.deleteElement(id);
@@ -241,9 +235,7 @@ export default function ModelPage() {
                     <div className="big">🧭</div>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>这里还是空的</div>
                     <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                      {drilledId === null
-                        ? <>点击「+ Software System」添加系统；<br />不确定放哪个层？点右上角「C4 指南」。</>
-                        : <>点击「+ 容器/组件」往里添加子结构；<br />点元素可编辑，点「进入」继续下钻。</>}
+                      <>点击「+ Software System」添加系统；点元素上的「展开」查看其内部；右键可添加子元素或删除。</>
                     </div>
                   </div>
                 )}
