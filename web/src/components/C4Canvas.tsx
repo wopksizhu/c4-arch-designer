@@ -32,8 +32,6 @@ const c4Cls: Record<string, string> = {
 const NODE_W = 200;
 const NODE_H = 100;
 const PAD = 50;
-const MIN_W = 340;
-const MIN_H = 220;
 
 // ---------- 普通元素节点 ----------
 type C4NodeData = { label: string; description: string; elementType: string; isParent: boolean; canExpand: boolean; expanded: boolean; canAdd: boolean };
@@ -94,36 +92,45 @@ interface BuildOpts {
   contextIds: Set<number>;
 }
 
-// 边界框内尺寸估算（子元素若是展开的父级，则更大）
-function estChildSize(e: Element, byParent: Map<number, Element[]>, expanded: Set<number>): { w: number; h: number } {
-  if (byParent.get(e.id)?.length && expanded.has(e.id)) return { w: 380, h: 320 };
-  return { w: NODE_W, h: NODE_H };
+// 自下而上递归计算每个元素的「边界框尺寸」（叶子=基础尺寸；展开的父级=包住其子元素的尺寸）
+function computeExtent(e: Element, byParent: Map<number, Element[]>, expanded: Set<number>, memo: Map<number, { w: number; h: number }>): { w: number; h: number } {
+  if (memo.has(e.id)) return memo.get(e.id)!;
+  const kids = expanded.has(e.id) ? byParent.get(e.id) || [] : [];
+  if (!kids.length) {
+    const r = { w: NODE_W, h: NODE_H };
+    memo.set(e.id, r);
+    return r;
+  }
+  let maxW = 0, maxH = 0;
+  kids.forEach((c) => {
+    const ce = computeExtent(c, byParent, expanded, memo);
+    const rx = c.posX - e.posX;
+    const ry = c.posY - e.posY;
+    maxW = Math.max(maxW, rx + ce.w);
+    maxH = Math.max(maxH, ry + ce.h);
+  });
+  const r = { w: maxW + PAD * 2, h: maxH + PAD * 2 };
+  memo.set(e.id, r);
+  return r;
 }
 
 function buildNodes(elements: Element[], o: BuildOpts): Node[] {
   const byParent = new Map<number, Element[]>();
   elements.forEach((e) => { const a = byParent.get(e.parentId ?? -1) || []; a.push(e); byParent.set(e.parentId ?? -1, a); });
 
-  const childrenOf = (id: number) => (byParent.get(id) || []).filter(() => o.expanded.has(id));
+  const memo = new Map<number, { w: number; h: number }>();
+  elements.forEach((e) => computeExtent(e, byParent, o.expanded, memo));
 
   const nodes: any[] = [];
   elements.forEach((e) => {
-    const kids = childrenOf(e.id);
+    const kids = o.expanded.has(e.id) ? byParent.get(e.id) || [] : [];
     if (kids.length) {
-      // 父级 = 边界框
-      let maxW = 0, maxH = 0;
-      kids.forEach((c) => {
-        const s = estChildSize(c, byParent, o.expanded);
-        const rx = c.posX - e.posX;
-        const ry = c.posY - e.posY;
-        maxW = Math.max(maxW, rx + s.w);
-        maxH = Math.max(maxH, ry + s.h);
-      });
+      const ext = memo.get(e.id)!;
       nodes.push({
         id: String(e.id),
         type: 'boundary',
         position: { x: e.posX, y: e.posY },
-        style: { width: Math.max(MIN_W, maxW + PAD * 2), height: Math.max(MIN_H, maxH + PAD * 2) },
+        style: { width: ext.w, height: ext.h },
         zIndex: -1,
         selectable: false,
         draggable: false,
@@ -249,7 +256,7 @@ export default function C4Canvas({
       <MiniMap pannable zoomable />
       {menu && (
         <div
-          style={{ position: 'absolute', left: menu.x, top: menu.y, zIndex: 1200, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow)', minWidth: 180, padding: 6 }}
+          style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 1200, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow)', minWidth: 180, padding: 6 }}
           onClick={() => setMenu(null)}
         >
           {menu.nodeId ? (
