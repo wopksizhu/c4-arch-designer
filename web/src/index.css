@@ -142,6 +142,15 @@ tbody tr:hover td { background: #f8fafc; }
 .c4-node .c4-drill:hover { background: #e0e7ff; }
 .c4-node.c4-context { opacity: .55; border-style: dashed; }
 .c4-node.c4-parent { max-width: none; min-width: 0; width: auto; height: auto; overflow: visible; border-style: dashed; background: rgba(255,255,255,.55); box-shadow: none; }
+
+/* 边界框（System/Container 分组，子元素画在框内） */
+.c4-boundary { position: relative; width: 100%; height: 100%; border: 2px dashed #94a3b8; border-radius: 16px; background: rgba(255,255,255,.55); pointer-events: none; }
+.c4-boundary.c4-system { border-color: #0f766e; background: #f0fdfa; }
+.c4-boundary.c4-container { border-color: #1d4ed8; background: #eff6ff; }
+.c4-boundary-header { position: absolute; top: 12px; left: 16px; right: 16px; display: flex; align-items: center; gap: 10px; pointer-events: auto; }
+.c4-boundary-name { font-weight: 700; font-size: 14px; color: #334155; }
+.c4-boundary .c4-toggle { font-size: 12px; padding: 3px 12px; border-radius: 999px; }
+.c4-boundary-body { position: absolute; inset: 0; pointer-events: none; }
 .c4-node .c4-actions { margin-top: 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
 .c4-node .c4-toggle, .c4-node .c4-drill { font-size: 11px; padding: 2px 10px; border-radius: 999px; }
 .c4-node .c4-toggle:hover, .c4-node .c4-drill:hover { background: #e0e7ff; }

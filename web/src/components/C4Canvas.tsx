@@ -16,19 +16,6 @@ import {
 import '@xyflow/react/dist/style.css';
 import type { Element, Relationship } from '../types';
 
-type C4NodeData = {
-  label: string;
-  description: string;
-  elementType: string;
-  context: boolean;
-  isParent: boolean;
-  canExpand: boolean;
-  expanded: boolean;
-  canAdd: boolean;
-};
-
-type C4NodeType = Node<C4NodeData, 'c4'>;
-
 const kindLabel: Record<string, string> = {
   person: 'Person',
   softwareSystem: 'Software System',
@@ -42,28 +29,36 @@ const c4Cls: Record<string, string> = {
   component: 'c4-component',
 };
 
-let toggleHandler: ((id: number) => void) | null = null;
+const NODE_W = 200;
+const NODE_H = 100;
+const PAD = 50;
+const MIN_W = 340;
+const MIN_H = 220;
+
+// ---------- 普通元素节点 ----------
+type C4NodeData = { label: string; description: string; elementType: string; isParent: boolean; canExpand: boolean; expanded: boolean; canAdd: boolean };
+type C4NodeType = Node<C4NodeData, 'c4'>;
+
 let addChildHandler: ((id: number) => void) | null = null;
+let expandHandler: ((id: number) => void) | null = null;
 
 function C4Node({ data, id }: NodeProps<C4NodeType>) {
   const kind = data?.elementType ? kindLabel[data.elementType] || data.elementType : '';
   const cls = data?.elementType ? c4Cls[data.elementType] || '' : '';
   const label = data?.label || `#${id}`;
   return (
-    <div className={`c4-node ${cls} ${data?.context ? 'c4-context' : ''} ${data?.isParent ? 'c4-parent' : ''}`}>
+    <div className={`c4-node ${cls}`}>
       <div className="kind">{kind}</div>
       <div className="name">{label}</div>
       {data?.description ? <div className="desc">{data.description}</div> : null}
       <div className="c4-actions">
         {data?.canExpand && (
-          <button className="c4-toggle" onClick={(e) => { e.stopPropagation(); toggleHandler && toggleHandler(Number(id)); }}>
+          <button className="c4-toggle" onClick={(e) => { e.stopPropagation(); expandHandler && expandHandler(Number(id)); }}>
             {data.expanded ? '▾ 收起' : '▸ 展开'}
           </button>
         )}
         {data?.canAdd && (
-          <button className="c4-drill" onClick={(e) => { e.stopPropagation(); addChildHandler && addChildHandler(Number(id)); }}>
-            + 添加子元素
-          </button>
+          <button className="c4-drill" onClick={(e) => { e.stopPropagation(); addChildHandler && addChildHandler(Number(id)); }}>+ 添加子元素</button>
         )}
       </div>
       <Handle type="target" position={Position.Left} />
@@ -72,7 +67,26 @@ function C4Node({ data, id }: NodeProps<C4NodeType>) {
   );
 }
 
-const nodeTypes = { c4: C4Node };
+// ---------- 边界框（System/Container 分组，子元素画在框内） ----------
+type BoundaryData = { label: string; elementType: string; expanded: boolean };
+type BoundaryNodeType = Node<BoundaryData, 'boundary'>;
+
+function BoundaryNode({ data, id }: NodeProps<BoundaryNodeType>) {
+  const cls = data?.elementType ? c4Cls[data.elementType] || '' : '';
+  return (
+    <div className={`c4-boundary ${cls}`}>
+      <div className="c4-boundary-header">
+        <span className="c4-boundary-name">{data?.label || id}</span>
+        <button className="c4-toggle" onClick={(e) => { e.stopPropagation(); expandHandler && expandHandler(Number(id)); }}>
+          {data?.expanded ? '▾ 收起' : '▸ 展开'}
+        </button>
+      </div>
+      <div className="c4-boundary-body" />
+    </div>
+  );
+}
+
+const nodeTypes = { c4: C4Node, boundary: BoundaryNode };
 
 interface BuildOpts {
   hasChildren: (id: number) => boolean;
@@ -80,60 +94,58 @@ interface BuildOpts {
   contextIds: Set<number>;
 }
 
-const NODE_W = 200;
-const NODE_H = 100;
-const BOX_PAD = 60;
-const BOX_MIN_W = 340;
-const BOX_MIN_H = 240;
+// 边界框内尺寸估算（子元素若是展开的父级，则更大）
+function estChildSize(e: Element, byParent: Map<number, Element[]>, expanded: Set<number>): { w: number; h: number } {
+  if (byParent.get(e.id)?.length && expanded.has(e.id)) return { w: 380, h: 320 };
+  return { w: NODE_W, h: NODE_H };
+}
 
-// 稳定版包含：父元素以自身坐标为框左上角（不跳位），子元素以相对坐标画在框内，父框按子元素范围自适应
 function buildNodes(elements: Element[], o: BuildOpts): Node[] {
-  const byId = new Map(elements.map((e) => [e.id, e]));
-  const boxSize: Record<number, { w: number; h: number }> = {};
+  const byParent = new Map<number, Element[]>();
+  elements.forEach((e) => { const a = byParent.get(e.parentId ?? -1) || []; a.push(e); byParent.set(e.parentId ?? -1, a); });
+
+  const childrenOf = (id: number) => (byParent.get(id) || []).filter(() => o.expanded.has(id));
+
+  const nodes: any[] = [];
   elements.forEach((e) => {
-    const p = e.parentId;
-    if (p != null && byId.has(p)) {
-      const parent = byId.get(p)!;
-      const rx = e.posX - parent.posX;
-      const ry = e.posY - parent.posY;
-      const b = boxSize[p] || (boxSize[p] = { w: 0, h: 0 });
-      b.w = Math.max(b.w, rx + NODE_W);
-      b.h = Math.max(b.h, ry + NODE_H);
+    const kids = childrenOf(e.id);
+    if (kids.length) {
+      // 父级 = 边界框
+      let maxW = 0, maxH = 0;
+      kids.forEach((c) => {
+        const s = estChildSize(c, byParent, o.expanded);
+        const rx = c.posX - e.posX;
+        const ry = c.posY - e.posY;
+        maxW = Math.max(maxW, rx + s.w);
+        maxH = Math.max(maxH, ry + s.h);
+      });
+      nodes.push({
+        id: String(e.id),
+        type: 'boundary',
+        position: { x: e.posX, y: e.posY },
+        style: { width: Math.max(MIN_W, maxW + PAD * 2), height: Math.max(MIN_H, maxH + PAD * 2) },
+        zIndex: -1,
+        selectable: false,
+        draggable: false,
+        data: { label: e.name, elementType: e.type, expanded: o.expanded.has(e.id) } as BoundaryData,
+      });
+    } else {
+      nodes.push({
+        id: String(e.id),
+        type: 'c4',
+        position: { x: e.posX, y: e.posY },
+        zIndex: 0,
+        data: {
+          label: e.name, description: e.description, elementType: e.type,
+          isParent: false,
+          canExpand: o.hasChildren(e.id),
+          expanded: o.expanded.has(e.id),
+          canAdd: (e.type === 'softwareSystem' || e.type === 'container') && !o.hasChildren(e.id),
+        } as C4NodeData,
+      });
     }
   });
-  return elements.map((e) => {
-    const isParent = !!boxSize[e.id];
-    const node: any = {
-      id: String(e.id),
-      type: 'c4',
-      position: { x: e.posX, y: e.posY },
-      data: {
-        label: e.name,
-        description: e.description,
-        elementType: e.type,
-        context: o.contextIds.has(e.id),
-        isParent,
-        canExpand: o.hasChildren(e.id),
-        expanded: o.expanded.has(e.id),
-        canAdd: (e.type === 'softwareSystem' || e.type === 'container') && !o.hasChildren(e.id),
-      },
-    };
-    const p = e.parentId;
-    if (p != null && byId.has(p)) {
-      const parent = byId.get(p)!;
-      node.parentId = String(p);
-      node.position = { x: e.posX - parent.posX, y: e.posY - parent.posY };
-      node.extent = 'parent';
-    }
-    const box = boxSize[e.id];
-    if (box) {
-      node.style = {
-        width: Math.max(BOX_MIN_W, box.w + BOX_PAD * 2),
-        height: Math.max(BOX_MIN_H, box.h + BOX_PAD * 2),
-      };
-    }
-    return node as Node;
-  });
+  return nodes;
 }
 
 type Props = {
@@ -171,15 +183,13 @@ export default function C4Canvas({
   onAddChild,
   onDelete,
 }: Props) {
-  toggleHandler = onToggleExpand;
   addChildHandler = onAddChild;
-
+  expandHandler = onToggleExpand;
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
 
   const nodes = useMemo<Node[]>(() => buildNodes(elements, { hasChildren, expanded: contextIds, contextIds }), [elements, hasChildren, contextIds]);
 
   const visible = useMemo(() => new Set(elements.map((e) => String(e.id))), [elements]);
-  // 选中节点时，高亮与之相连的连接线
   const edges = useMemo<Edge[]>(
     () =>
       relationships
@@ -207,29 +217,15 @@ export default function C4Canvas({
   useEffect(() => setNodes(nodes), [nodes, setNodes]);
   useEffect(() => setEdges(edges), [edges, setEdges]);
 
-  const onConnect = useCallback(
-    (c: Connection) => {
-      if (c.source && c.target) onAddEdge(Number(c.source), Number(c.target));
-    },
-    [onAddEdge],
-  );
+  const onConnect = useCallback((c: Connection) => { if (c.source && c.target) onAddEdge(Number(c.source), Number(c.target)); }, [onAddEdge]);
 
-  const onPaneCtx = useCallback((e: any) => {
-    e.preventDefault();
-    setMenu({ x: e.clientX, y: e.clientY, nodeId: null });
-  }, []);
-  const onNodeCtx = useCallback((e: any, node: Node) => {
-    e.preventDefault();
-    setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
-  }, []);
+  const onPaneCtx = useCallback((e: any) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: null }); }, []);
+  const onNodeCtx = useCallback((e: any, node: Node) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id }); }, []);
 
-  const onDragStop = useCallback(
-    (_e: unknown, node: Node) => {
-      onMoveElement(Number(node.id), node.position.x, node.position.y);
-      onMoveElementCommit(Number(node.id), node.position.x, node.position.y);
-    },
-    [onMoveElement, onMoveElementCommit],
-  );
+  const onDragStop = useCallback((_e: unknown, node: Node) => {
+    onMoveElement(Number(node.id), node.position.x, node.position.y);
+    onMoveElementCommit(Number(node.id), node.position.x, node.position.y);
+  }, [onMoveElement, onMoveElementCommit]);
 
   return (
     <ReactFlow
@@ -238,18 +234,9 @@ export default function C4Canvas({
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
-      onEdgeClick={(_e, edge) => {
-        onSelect(null);
-        onSelectEdge(edge.id);
-      }}
-      onNodeClick={(_e, node) => {
-        onSelect(node.id);
-        onSelectEdge(null);
-      }}
-      onPaneClick={() => {
-        onSelect(null);
-        onSelectEdge(null);
-      }}
+      onEdgeClick={(_e, edge) => { onSelect(null); onSelectEdge(edge.id); }}
+      onNodeClick={(_e, node) => { onSelect(node.id); onSelectEdge(null); }}
+      onPaneClick={() => { onSelect(null); onSelectEdge(null); }}
       onNodeContextMenu={onNodeCtx}
       onPaneContextMenu={onPaneCtx}
       onNodeDragStop={onDragStop}
@@ -262,26 +249,18 @@ export default function C4Canvas({
       <MiniMap pannable zoomable />
       {menu && (
         <div
-          style={{
-            position: 'absolute', left: menu.x, top: menu.y, zIndex: 1200,
-            background: '#fff', border: '1px solid var(--border)', borderRadius: 8,
-            boxShadow: 'var(--shadow)', minWidth: 180, padding: 6,
-          }}
+          style={{ position: 'absolute', left: menu.x, top: menu.y, zIndex: 1200, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow)', minWidth: 180, padding: 6 }}
           onClick={() => setMenu(null)}
         >
           {menu.nodeId ? (
             <div>
-              <div className="menu-item" onClick={() => { if (hasChildren(Number(menu.nodeId))) { onToggleExpand(Number(menu.nodeId)); setMenu(null); } }}>
-                展开 / 收起
-              </div>
+              <div className="menu-item" onClick={() => { if (hasChildren(Number(menu.nodeId))) { onToggleExpand(Number(menu.nodeId)); setMenu(null); } }}>展开 / 收起</div>
               <div className="menu-item" onClick={() => { if (menu.nodeId) onAddChild(Number(menu.nodeId)); setMenu(null); }}>添加子元素</div>
               <div className="menu-item" onClick={() => { if (menu.nodeId) onDelete(Number(menu.nodeId)); setMenu(null); }}>删除元素</div>
             </div>
           ) : (
             addTypes.map((t) => (
-              <div key={t} className="menu-item" onClick={() => { onAddType(t); setMenu(null); }}>
-                + 添加 {kindLabel[t] || t}
-              </div>
+              <div key={t} className="menu-item" onClick={() => { onAddType(t); setMenu(null); }}>+ 添加 {kindLabel[t] || t}</div>
             ))
           )}
         </div>
