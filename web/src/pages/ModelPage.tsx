@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as api from '../api';
 import C4Canvas from '../components/C4Canvas';
+import ElementTree from '../components/ElementTree';
 import type {
   AiDraft,
   Element,
@@ -86,10 +87,34 @@ export default function ModelPage() {
   const drilledElement = drilledId !== null ? elements.find((e) => e.id === drilledId) || null : null;
   const viewLevel = drilledElement ? drilledElement.level + 1 : 1;
 
+  const elementById = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
+
+  // 钻取式：保留父级与外部关联（上下文节点），便于查看交互关系
   const visibleElements = useMemo(() => {
     if (drilledId === null) return elements.filter((e) => (e.parentId ?? null) === null);
-    return elements.filter((e) => e.parentId === drilledId);
-  }, [elements, drilledId]);
+    const children = elements.filter((e) => e.parentId === drilledId);
+    const parent = elementById.get(drilledId);
+    const related = new Set<number>();
+    relationships.forEach((r) => {
+      if (r.sourceId === drilledId) related.add(r.targetId);
+      if (r.targetId === drilledId) related.add(r.sourceId);
+    });
+    const external = [...related]
+      .map((id) => elementById.get(id))
+      .filter((e): e is Element => !!e && e.id !== drilledId && e.parentId !== drilledId);
+    return parent ? [parent, ...children, ...external] : children;
+  }, [elements, drilledId, relationships, elementById]);
+
+  const contextIds = useMemo(() => {
+    if (drilledId === null) return new Set<number>();
+    const ids = new Set<number>([drilledId]);
+    const isChild = (id: number) => elementById.get(id)?.parentId === drilledId;
+    relationships.forEach((r) => {
+      if (r.sourceId === drilledId && !isChild(r.targetId)) ids.add(r.targetId);
+      if (r.targetId === drilledId && !isChild(r.sourceId)) ids.add(r.sourceId);
+    });
+    return ids;
+  }, [drilledId, relationships, elementById]);
 
   const visibleIds = useMemo(() => new Set(visibleElements.map((e) => e.id)), [visibleElements]);
   const visibleRelationships = useMemo(
@@ -132,6 +157,7 @@ export default function ModelPage() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const selectedEdge = relationships.find((r) => String(r.id) === selectedEdgeId) || null;
   const [view, setView] = useState('canvas');
+  const [showTree, setShowTree] = useState(false);
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -161,6 +187,7 @@ export default function ModelPage() {
                 {drilledElement && <span className="muted" style={{ fontSize: 12 }}>← 点面包屑返回外层</span>}
               </div>
               <span className="muted" style={{ fontSize: 12 }}>层级 {LEVEL_NAME[viewLevel]}</span>
+              <button className={`ghost sm ${showTree ? 'active' : ''}`} onClick={() => setShowTree(!showTree)}>元素结构</button>
               <span style={{ width: 8 }} />
               <div className="adds">
                 {TYPES[viewLevel].map((t) => (
@@ -169,10 +196,16 @@ export default function ModelPage() {
               </div>
             </div>
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+              {showTree && (
+                <aside style={{ width: 250, borderRight: '1px solid var(--border)', background: 'var(--surface)', overflow: 'auto' }}>
+                  <ElementTree elements={elements} drilledId={drilledId} onSelect={(id) => setSelectedId(String(id))} onDrill={setDrilledId} />
+                </aside>
+              )}
               <div style={{ flex: 1, position: 'relative' }}>
                 <C4Canvas
                   elements={visibleElements}
                   relationships={visibleRelationships}
+                  contextIds={contextIds}
                   drillable={drillable}
                   onDrill={(id) => setDrilledId(id)}
                   onSelect={setSelectedId}
@@ -203,7 +236,12 @@ export default function ModelPage() {
                       setRelationships((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
                       setSelectedEdgeId(String(updated && updated.id ? updated.id : e.id));
                     }}
-                    onDelete={async (eid) => { await api.deleteRelationship(eid); setSelectedEdgeId(null); reload(); }}
+                    onDelete={async (eid) => {
+                      if (!window.confirm('确定删除这条连接关系？')) return;
+                      await api.deleteRelationship(eid);
+                      setSelectedEdgeId(null);
+                      reload();
+                    }}
                   />
                 ) : (
                   <Inspector
@@ -232,7 +270,12 @@ export default function ModelPage() {
                       setSelectedId(String(id));
                       setElements((prev) => prev.map((it) => (it.id === e.id ? { ...it, ...e, id: it.id } : it)));
                     }}
-                    onDelete={async (eid) => { await api.deleteElement(eid); setSelectedId(null); reload(); }}
+                    onDelete={async (eid) => {
+                      if (!window.confirm('确定删除该元素？其下所有子元素、关系与追溯都会被删除。')) return;
+                      await api.deleteElement(eid);
+                      setSelectedId(null);
+                      reload();
+                    }}
                   />
                 )}
               </aside>
@@ -480,7 +523,7 @@ function RequirementsTab({ pid, requirements, elements, traceLinks, onChanged }:
                     <span style={{ fontWeight: 600 }}>{r.code ? `[${r.code}] ` : ''}{r.title}</span>
                     <span className={`pill ${['high', 'medium', 'low'].includes(r.priority) ? r.priority : 'info'}`} style={{ marginLeft: 8 }}>{prioLabel(r.priority)}</span>
                   </div>
-                  <button className="danger sm" onClick={async () => { await api.deleteRequirement(r.id); onChanged(); }}>删除</button>
+                  <button className="danger sm" onClick={async () => { if (!window.confirm('确定删除该需求？')) return; await api.deleteRequirement(r.id); onChanged(); }}>删除</button>
                 </div>
                 {r.description && <div className="subs">{r.description}</div>}
                 <div className="row" style={{ marginTop: 8 }}>
@@ -604,7 +647,7 @@ function PrototypesTab({ pid, prototypes, containerElements, traceLinks, onChang
                         <option key={el.id} value={el.id}>{el.name}</option>
                       ))}
                     </select>
-                    <button className="danger sm" onClick={async () => { await api.deletePrototype(p.id); onChanged(); }}>删除</button>
+                    <button className="danger sm" onClick={async () => { if (!window.confirm('确定删除该原型？')) return; await api.deletePrototype(p.id); onChanged(); }}>删除</button>
                   </div>
                 </div>
               </div>

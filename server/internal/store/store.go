@@ -130,17 +130,58 @@ func UpdateElement(ctx context.Context, e *model.Element) error {
 	return err
 }
 
+// DeleteElement 递归删除元素及其全部后代（子容器/组件），并清理相关关系与追溯链接。
 func DeleteElement(ctx context.Context, id int64) error {
-	_, err := g.DB().Exec(ctx, "DELETE FROM elements WHERE id=?", id)
-	if err != nil {
+	ids := []int64{id}
+	queue := []int64{id}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		children, err := g.DB().GetAll(ctx, "SELECT id FROM elements WHERE parent_id=?", cur)
+		if err != nil {
+			return err
+		}
+		for _, c := range children {
+			cid := c["id"].Int64()
+			ids = append(ids, cid)
+			queue = append(queue, cid)
+		}
+	}
+
+	ph := placeholders(len(ids))
+	args := toIface(ids)
+
+	// 清理相关追溯链接（of all descendants）
+	if _, err := g.DB().Exec(ctx, "DELETE FROM trace_links WHERE (from_type='element' AND from_id IN ("+ph+")) OR (to_type='element' AND to_id IN ("+ph+"))", append(args, args...)...); err != nil {
 		return err
 	}
-	_, err = g.DB().Exec(ctx, "DELETE FROM relationships WHERE source_id=? OR target_id=?", id, id)
-	if err != nil {
+	// 清理相关关系
+	if _, err := g.DB().Exec(ctx, "DELETE FROM relationships WHERE source_id IN ("+ph+") OR target_id IN ("+ph+")", append(args, args...)...); err != nil {
 		return err
 	}
-	_, err = g.DB().Exec(ctx, "DELETE FROM trace_links WHERE (from_type='element' AND from_id=?) OR (to_type='element' AND to_id=?)", id, id)
+	// 删除元素（含后代）
+	_, err := g.DB().Exec(ctx, "DELETE FROM elements WHERE id IN ("+ph+")", args...)
 	return err
+}
+
+// placeholders 生成 n 个 "?"，逗号分隔。
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	s := "?"
+	for i := 1; i < n; i++ {
+		s += ",?"
+	}
+	return s
+}
+
+func toIface(ids []int64) []interface{} {
+	out := make([]interface{}, len(ids))
+	for i, v := range ids {
+		out[i] = v
+	}
+	return out
 }
 
 // SetElementParent 设置元素的父元素。

@@ -20,6 +20,7 @@ type C4NodeData = {
   description: string;
   elementType: string;
   drillable: boolean;
+  context: boolean;
 };
 
 type C4NodeType = Node<C4NodeData, 'c4'>;
@@ -46,7 +47,7 @@ function C4Node({ data, id }: NodeProps<C4NodeType>) {
   // 兜底：即使 data 异常也显示元素 id，绝不出现空白框
   const label = data?.label || `#${id}`;
   return (
-    <div className={`c4-node ${cls}`}>
+    <div className={`c4-node ${cls} ${data?.context ? 'c4-context' : ''}`}>
       <div className="kind">{kind}</div>
       <div className="name">{label}</div>
       {data?.description ? <div className="desc">{data.description}</div> : null}
@@ -72,6 +73,7 @@ const nodeTypes = { c4: C4Node };
 type Props = {
   elements: Element[];
   relationships: Relationship[];
+  contextIds?: Set<number>;
   drillable: (e: Element) => boolean;
   onDrill: (id: number) => void;
   onSelect: (id: string | null) => void;
@@ -84,6 +86,7 @@ type Props = {
 export default function C4Canvas({
   elements,
   relationships,
+  contextIds = new Set(),
   drillable,
   onDrill,
   onSelect,
@@ -106,9 +109,10 @@ export default function C4Canvas({
           description: e.description,
           elementType: e.type,
           drillable: drillable(e),
+          context: contextIds.has(e.id),
         } as C4NodeData,
       })),
-    [elements, drillable],
+    [elements, drillable, contextIds],
   );
 
   const visible = useMemo(() => new Set(elements.map((e) => String(e.id))), [elements]);

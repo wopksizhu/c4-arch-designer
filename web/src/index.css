@@ -140,3 +140,15 @@ tbody tr:hover td { background: #f8fafc; }
 .c4-component { border-color: #b45309; background: #fef3c7; }
 .c4-node .c4-drill { margin-top: 8px; font-size: 11px; padding: 2px 10px; border-radius: 999px; }
 .c4-node .c4-drill:hover { background: #e0e7ff; }
+.c4-node.c4-context { opacity: .55; border-style: dashed; }
+
+/* 元素结构树 */
+.tree { padding: 4px 0; font-size: 13px; }
+.tree-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; white-space: nowrap; overflow: hidden; }
+.tree-row:hover { background: #f1f5f9; }
+.tree-row .dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+.tree-row .dot.c4-person { background: #7c3aed; }
+.tree-row .dot.c4-softwareSystem { background: #0f766e; }
+.tree-row .dot.c4-container { background: #1d4ed8; }
+.tree-row .dot.c4-component { background: #b45309; }
+

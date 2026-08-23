@@ -68,6 +68,7 @@ export default function ProjectsPage() {
             <button
               className="danger"
               onClick={async () => {
+                if (!window.confirm(`确定删除项目「${p.name}」？其下所有元素、需求、原型、追溯都会被删除，且不可恢复。`)) return;
                 await api.deleteProject(p.id);
                 reload();
               }}

@@ -158,7 +158,15 @@ func main() {
 	rel = jsonData(json.RawMessage(body)).getData()
 	check("关系部分更新(协议,交互保留)", code == 0 && str(rel["interaction"]) == "request" && str(rel["protocol"]) == "gRPC", body)
 
-	// 17. AI 测试（可选）
+	// 17. 级联删除：删除父元素，子元素应被一并删除
+	code, body = req("POST", fmt.Sprintf("/api/projects/%v/elements", pid), map[string]interface{}{"level": 1, "type": "softwareSystem", "name": "Parent"})
+	parentID := num(jsonData(json.RawMessage(body)).getData()["id"])
+	req("POST", fmt.Sprintf("/api/projects/%v/elements", pid), map[string]interface{}{"level": 2, "type": "container", "name": "Child", "parentId": parentID})
+	req("DELETE", fmt.Sprintf("/api/elements/%v", parentID), nil)
+	code, body = req("GET", fmt.Sprintf("/api/projects/%v/elements", pid), nil)
+	check("级联删除(删父元素子元素也被删)", code == 0 && !strings.Contains(body, "Child"), body)
+
+	// 18. AI 测试（可选）
 	if *withAI {
 		code, body = req("POST", fmt.Sprintf("/api/projects/%v/ai/generate", pid), map[string]interface{}{"text": "build a store system"})
 		gen := jsonData(json.RawMessage(body))
