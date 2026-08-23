@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -28,6 +28,12 @@ type C4NodeData = {
 type C4NodeType = Node<C4NodeData, 'c4'>;
 
 const kindLabel: Record<string, string> = {
+  person: 'Person',
+  softwareSystem: 'Software System',
+  container: 'Container',
+  component: 'Component',
+};
+const addLabel: Record<string, string> = {
   person: 'Person',
   softwareSystem: 'Software System',
   container: 'Container',
@@ -73,8 +79,11 @@ const nodeTypes = { c4: C4Node };
 
 const NODE_W = 200;
 const NODE_H = 100;
+const BOX_PAD = 70;
+const BOX_MIN_W = 360;
+const BOX_MIN_H = 240;
 
-// 构建 compound 节点：父元素作为「边界框」，子元素（parentId 指向它）绘制在框内
+// 构建 compound 节点：父元素作为「边界框」，子元素绘制在框内；父框自适应撑开以容纳全部子元素
 function buildNodes(elements: Element[], drillable: (e: Element) => boolean, contextIds: Set<number>): Node[] {
   const byId = new Map(elements.map((e) => [e.id, e]));
   const box: Record<number, { minX: number; minY: number; maxX: number; maxY: number }> = {};
@@ -102,16 +111,25 @@ function buildNodes(elements: Element[], drillable: (e: Element) => boolean, con
         isParent: !!box[e.id],
       },
     };
+    const b = box[e.id];
+    if (b) {
+      const left = b.minX - BOX_PAD;
+      const top = b.minY - BOX_PAD;
+      node.position = { x: left, y: top };
+      node.style = {
+        width: Math.max(BOX_MIN_W, (b.maxX - b.minX) + BOX_PAD * 2),
+        height: Math.max(BOX_MIN_H, (b.maxY - b.minY) + BOX_PAD * 2),
+      };
+    }
     const p = e.parentId;
     if (p != null && byId.has(p)) {
       const parent = byId.get(p)!;
+      const pb = box[p];
+      const left = pb ? pb.minX - BOX_PAD : parent.posX;
+      const top = pb ? pb.minY - BOX_PAD : parent.posY;
       node.parentId = String(p);
-      node.position = { x: e.posX - parent.posX, y: e.posY - parent.posY };
+      node.position = { x: e.posX - left, y: e.posY - top };
       node.extent = 'parent';
-    }
-    const b = box[e.id];
-    if (b) {
-      node.style = { width: b.maxX - b.minX + 80, height: b.maxY - b.minY + 70 };
     }
     return node as Node;
   });
@@ -128,6 +146,9 @@ type Props = {
   onAddEdge: (sourceId: number, targetId: number) => void;
   onMoveElement: (id: number, x: number, y: number) => void;
   onMoveElementCommit: (id: number, x: number, y: number) => void;
+  addTypes: string[];
+  onAddType: (t: string) => void;
+  onDelete: (id: number) => void;
 };
 
 export default function C4Canvas({
@@ -141,9 +162,15 @@ export default function C4Canvas({
   onAddEdge,
   onMoveElement,
   onMoveElementCommit,
+  addTypes,
+  onAddType,
+  onDelete,
 }: Props) {
   // 记录当前 drill 回调，供节点上的「进入」按钮使用
   drillHandler = onDrill;
+
+  // 右键菜单状态
+  const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
 
   const nodes = useMemo<Node[]>(() => buildNodes(elements, drillable, contextIds), [elements, drillable, contextIds]);
 
@@ -179,6 +206,15 @@ export default function C4Canvas({
     [onAddEdge],
   );
 
+  const onPaneCtx = useCallback((e: any) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, nodeId: null });
+  }, []);
+  const onNodeCtx = useCallback((e: any, node: Node) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
+  }, []);
+
   // 拖拽结束：用绝对坐标回写（嵌套节点 position 是相对的，positionAbsolute 才是绝对）
   const onDragStop = useCallback(
     (_e: unknown, node: Node) => {
@@ -210,6 +246,8 @@ export default function C4Canvas({
         onSelect(null);
         onSelectEdge(null);
       }}
+      onNodeContextMenu={onNodeCtx}
+      onPaneContextMenu={onPaneCtx}
       onNodeDragStop={onDragStop}
       nodeTypes={nodeTypes}
       fitView
@@ -218,6 +256,38 @@ export default function C4Canvas({
       <Background />
       <Controls />
       <MiniMap pannable zoomable />
+      {menu && (
+        <div
+          style={{
+            position: 'absolute', left: menu.x, top: menu.y, zIndex: 1200,
+            background: '#fff', border: '1px solid var(--border)', borderRadius: 8,
+            boxShadow: 'var(--shadow)', minWidth: 170, padding: 6,
+          }}
+          onClick={() => setMenu(null)}
+        >
+          {menu.nodeId && (
+            <div>
+              <div
+                className="menu-item"
+                onClick={() => {
+                  const id = Number(menu.nodeId);
+                  const el = elements.find((x) => x.id === id);
+                  if (el && drillable(el)) { onDrill(id); setMenu(null); }
+                }}
+              >
+                进入内部
+              </div>
+              <div className="menu-item" onClick={() => { if (menu.nodeId) onDelete(Number(menu.nodeId)); setMenu(null); }}>删除元素</div>
+              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+            </div>
+          )}
+          {addTypes.map((t) => (
+            <div key={t} className="menu-item" onClick={() => { onAddType(t); setMenu(null); }}>
+              + 添加 {addLabel[t] || t}
+            </div>
+          ))}
+        </div>
+      )}
     </ReactFlow>
   );
 }

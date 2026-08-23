@@ -89,18 +89,31 @@ export default function ModelPage() {
 
   const elementById = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
 
-  // 钻取式：父级作为边界框，子元素绘制在框内部（C4 的“包含”模型）
+  // 钻取式：父级作为边界框，子元素绘制在框内部；并显示与父级有信息交互的外部元素（信息交互层级追溯）
   const visibleElements = useMemo(() => {
     if (drilledId === null) return elements.filter((e) => (e.parentId ?? null) === null);
     const children = elements.filter((e) => e.parentId === drilledId);
     const parent = elementById.get(drilledId);
-    return parent ? [parent, ...children] : children;
-  }, [elements, drilledId, elementById]);
+    const related = new Set<number>();
+    relationships.forEach((r) => {
+      if (r.sourceId === drilledId) related.add(r.targetId);
+      if (r.targetId === drilledId) related.add(r.sourceId);
+    });
+    const external = [...related]
+      .map((id) => elementById.get(id))
+      .filter((e): e is Element => !!e && e.id !== drilledId && e.parentId !== drilledId);
+    return parent ? [parent, ...children, ...external] : children;
+  }, [elements, drilledId, relationships, elementById]);
 
   const contextIds = useMemo(() => {
     if (drilledId === null) return new Set<number>();
-    return new Set<number>([drilledId]);
-  }, [drilledId]);
+    const ids = new Set<number>([drilledId]);
+    relationships.forEach((r) => {
+      if (r.sourceId === drilledId) ids.add(r.targetId);
+      if (r.targetId === drilledId) ids.add(r.sourceId);
+    });
+    return ids;
+  }, [drilledId, relationships]);
 
   const visibleIds = useMemo(() => new Set(visibleElements.map((e) => e.id)), [visibleElements]);
   const visibleRelationships = useMemo(
@@ -214,6 +227,14 @@ export default function ModelPage() {
                   onAddEdge={addEdge}
                   onMoveElement={moveElement}
                   onMoveElementCommit={commitElement}
+                  addTypes={TYPES[viewLevel]}
+                  onAddType={(t) => addElement(t)}
+                  onDelete={async (id) => {
+                    if (!window.confirm('确定删除该元素？其下所有子元素、关系与追溯都会被删除。')) return;
+                    await api.deleteElement(id);
+                    setSelectedId(null);
+                    reload();
+                  }}
                 />
                 {visibleElements.length === 0 && (
                   <div className="empty" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(255,255,255,.94)', borderRadius: 14, padding: '22px 30px', boxShadow: 'var(--shadow)', pointerEvents: 'none' }}>
