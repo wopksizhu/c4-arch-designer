@@ -31,7 +31,6 @@ const c4Cls: Record<string, string> = {
 
 const NODE_W = 200;
 const NODE_H = 100;
-const PAD = 50;
 
 // ---------- 普通元素节点 ----------
 type C4NodeData = { label: string; description: string; elementType: string; isParent: boolean; canExpand: boolean; expanded: boolean; canAdd: boolean };
@@ -92,67 +91,69 @@ interface BuildOpts {
   contextIds: Set<number>;
 }
 
-// 自下而上递归计算每个元素的「边界框尺寸」（叶子=基础尺寸；展开的父级=包住其子元素的尺寸）
-function computeExtent(e: Element, byParent: Map<number, Element[]>, expanded: Set<number>, memo: Map<number, { w: number; h: number }>): { w: number; h: number } {
-  if (memo.has(e.id)) return memo.get(e.id)!;
+// 自下而上递归布局 + 计算边界框尺寸：子元素按实际尺寸换行网格排进父框，父框恰好包裹
+function place(e: Element, byParent: Map<number, Element[]>, expanded: Set<number>, pos: Map<number, { x: number; y: number }>, ext: Map<number, { w: number; h: number }>, parentAbs: { x: number; y: number }): { w: number; h: number } {
   const kids = expanded.has(e.id) ? byParent.get(e.id) || [] : [];
   if (!kids.length) {
     const r = { w: NODE_W, h: NODE_H };
-    memo.set(e.id, r);
+    ext.set(e.id, r);
     return r;
   }
-  let maxW = 0, maxH = 0;
-  kids.forEach((c) => {
-    const ce = computeExtent(c, byParent, expanded, memo);
-    const rx = c.posX - e.posX;
-    const ry = c.posY - e.posY;
-    maxW = Math.max(maxW, rx + ce.w);
-    maxH = Math.max(maxH, ry + ce.h);
+  const PADX = 46, PADY = 34, HEAD = 52, MAXW = 780, GAPX = 46, GAPY = 34;
+  let x = PADX, y = HEAD + PADY, rowH = 0, maxW = 0, maxY = 0;
+  kids.forEach((k) => {
+    const ke = place(k, byParent, expanded, pos, ext, { x: parentAbs.x + x, y: parentAbs.y + y });
+    if (x + ke.w > MAXW) { x = PADX; y += rowH + GAPY; rowH = 0; }
+    pos.set(k.id, { x: parentAbs.x + x, y: parentAbs.y + y });
+    x += ke.w + GAPX;
+    rowH = Math.max(rowH, ke.h);
+    maxW = Math.max(maxW, x - GAPX);
+    maxY = Math.max(maxY, y + ke.h);
   });
-  const r = { w: maxW + PAD * 2, h: maxH + PAD * 2 };
-  memo.set(e.id, r);
+  const r = { w: Math.max(NODE_W, maxW + PADX), h: Math.max(NODE_H, maxY + PADY) };
+  ext.set(e.id, r);
   return r;
 }
 
 function buildNodes(elements: Element[], o: BuildOpts): Node[] {
   const byParent = new Map<number, Element[]>();
   elements.forEach((e) => { const a = byParent.get(e.parentId ?? -1) || []; a.push(e); byParent.set(e.parentId ?? -1, a); });
+  const roots = elements.filter((e) => (e.parentId ?? null) === null);
 
-  const memo = new Map<number, { w: number; h: number }>();
-  elements.forEach((e) => computeExtent(e, byParent, o.expanded, memo));
+  const pos = new Map<number, { x: number; y: number }>();
+  const ext = new Map<number, { w: number; h: number }>();
+  roots.forEach((r) => { pos.set(r.id, { x: r.posX, y: r.posY }); place(r, byParent, o.expanded, pos, ext, { x: r.posX, y: r.posY }); });
 
-  const nodes: any[] = [];
-  elements.forEach((e) => {
+  return elements.map((e) => {
     const kids = o.expanded.has(e.id) ? byParent.get(e.id) || [] : [];
+    const p = pos.get(e.id) || { x: e.posX, y: e.posY };
     if (kids.length) {
-      const ext = memo.get(e.id)!;
-      nodes.push({
+      const ex = ext.get(e.id)!;
+      return {
         id: String(e.id),
         type: 'boundary',
-        position: { x: e.posX, y: e.posY },
-        style: { width: ext.w, height: ext.h },
+        position: p,
+        style: { width: ex.w, height: ex.h },
         zIndex: -1,
         selectable: false,
         draggable: false,
         data: { label: e.name, elementType: e.type, expanded: o.expanded.has(e.id) } as BoundaryData,
-      });
-    } else {
-      nodes.push({
-        id: String(e.id),
-        type: 'c4',
-        position: { x: e.posX, y: e.posY },
-        zIndex: 0,
-        data: {
-          label: e.name, description: e.description, elementType: e.type,
-          isParent: false,
-          canExpand: o.hasChildren(e.id),
-          expanded: o.expanded.has(e.id),
-          canAdd: (e.type === 'softwareSystem' || e.type === 'container') && !o.hasChildren(e.id),
-        } as C4NodeData,
-      });
+      };
     }
+    return {
+      id: String(e.id),
+      type: 'c4',
+      position: p,
+      zIndex: 0,
+      data: {
+        label: e.name, description: e.description, elementType: e.type,
+        isParent: false,
+        canExpand: o.hasChildren(e.id),
+        expanded: o.expanded.has(e.id),
+        canAdd: (e.type === 'softwareSystem' || e.type === 'container') && !o.hasChildren(e.id),
+      } as C4NodeData,
+    };
   });
-  return nodes;
 }
 
 type Props = {
