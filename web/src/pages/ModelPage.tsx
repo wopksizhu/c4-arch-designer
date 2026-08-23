@@ -30,6 +30,34 @@ const TYPE_LABEL: Record<string, string> = {
 };
 const prioLabel = (p: string) => (p === 'high' ? '高' : p === 'low' ? '低' : '中');
 
+// 简单分层自动布局：根元素网格；每个父级展开后，其子元素在父级下方网格排列
+function layoutModel(elements: Element[]): Map<number, { x: number; y: number }> {
+  const byParent = new Map<number, Element[]>();
+  const roots: Element[] = [];
+  elements.forEach((e) => {
+    if (e.parentId == null) roots.push(e);
+    else {
+      const arr = byParent.get(e.parentId) || [];
+      arr.push(e);
+      byParent.set(e.parentId, arr);
+    }
+  });
+  const pos = new Map<number, { x: number; y: number }>();
+  const layout = (ids: Element[], x0: number, y0: number) => {
+    const n = ids.length;
+    const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+    ids.forEach((e, i) => {
+      const x = x0 + (i % cols) * 300;
+      const y = y0 + Math.floor(i / cols) * 200;
+      pos.set(e.id, { x, y });
+      const kids = byParent.get(e.id);
+      if (kids && kids.length) layout(kids, x, y + 220);
+    });
+  };
+  layout(roots, 0, 0);
+  return pos;
+}
+
 export default function ModelPage() {
   const { id } = useParams();
   const pid = Number(id);
@@ -70,13 +98,27 @@ export default function ModelPage() {
   }, [reload]);
 
   // 一张大图 + 元素块可展开/折叠：可见元素 = 根元素 + 所有“展开”父级的后代（递归）
-  const expand = (id: number) =>
+  const applyLayout = async (only?: number[]) => {
+    const pos = layoutModel(elements);
+    let targets = pos;
+    if (only) {
+      const s = new Set(only);
+      targets = new Map([...pos].filter(([id]) => s.has(id)));
+    }
+    await Promise.all([...targets.entries()].map(([id, p]) => api.updateElement(id, { posX: p.x, posY: p.y })));
+    reload();
+  };
+
+  const expand = (id: number) => {
     setExpanded((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
       else n.add(id);
       return n;
     });
+    // 展开/收起后自动重新布局，让框内子元素整齐排列
+    setTimeout(() => applyLayout(), 0);
+  };
 
   const hasChildren = useCallback((id: number) => elements.some((e) => e.parentId === id), [elements]);
 
@@ -177,6 +219,7 @@ export default function ModelPage() {
               <strong>{project?.name || '…'}</strong>
               <div className="grow" />
               <span className="muted" style={{ fontSize: 12 }}>点元素上「展开」可查看内部，右键可添加/删除</span>
+              <button className="ghost sm" onClick={() => applyLayout()}>自动布局</button>
               <button className="ghost sm" onClick={() => setExpanded(new Set(elements.filter((e) => hasChildren(e.id)).map((e) => e.id)))}>全部展开</button>
               <button className="ghost sm" onClick={() => setExpanded(new Set())}>全部收起</button>
               <button className={`ghost sm ${showTree ? 'active' : ''}`} onClick={() => setShowTree(!showTree)}>元素结构</button>
