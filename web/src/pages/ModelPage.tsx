@@ -169,7 +169,7 @@ export default function ModelPage() {
               </div>
             </div>
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, position: 'relative' }}>
                 <C4Canvas
                   elements={visibleElements}
                   relationships={visibleRelationships}
@@ -181,6 +181,17 @@ export default function ModelPage() {
                   onMoveElement={moveElement}
                   onMoveElementCommit={commitElement}
                 />
+                {visibleElements.length === 0 && (
+                  <div className="empty" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(255,255,255,.94)', borderRadius: 14, padding: '22px 30px', boxShadow: 'var(--shadow)', pointerEvents: 'none' }}>
+                    <div className="big">🧭</div>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>这里还是空的</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      {drilledId === null
+                        ? <>点击「+ Software System」添加系统；<br />不确定放哪个层？点右上角「C4 指南」。</>
+                        : <>点击「+ 容器/组件」往里添加子结构；<br />点元素可编辑，点「进入」继续下钻。</>}
+                    </div>
+                  </div>
+                )}
               </div>
               <aside style={{ width: 320, borderLeft: '1px solid #e5e7eb', background: '#fff', overflow: 'auto' }}>
                 {selectedEdge ? (
