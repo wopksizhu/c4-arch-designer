@@ -154,13 +154,15 @@ export default function ModelPage() {
 
   async function addElement(type: string, parentId?: number | null) {
     const parent = parentId != null ? elements.find((e) => e.id === parentId) : null;
+    const siblings = elements.filter((e) => e.parentId === parentId);
     const e = await api.createElement(pid, {
       level: parent ? parent.level + 1 : 1,
       type: type as ElementType,
       name: 'New ' + TYPE_LABEL[type],
       parentId: parentId ?? null,
-      posX: 200 + elements.length * 20,
-      posY: 200 + elements.length * 20,
+      // 子元素默认放在父元素正下方，避免与父元素重叠（后续自动布局再细化）
+      posX: parent ? parent.posX : 200 + elements.length * 20,
+      posY: parent ? parent.posY + 200 + siblings.length * 160 : 200 + elements.length * 20,
     });
     setElements((prev) => [...prev, e]);
     if (parentId != null) setExpanded((prev) => new Set(prev).add(parentId));
@@ -256,6 +258,7 @@ export default function ModelPage() {
                   elements={visibleElements}
                   relationships={visibleRelationships}
                   contextIds={contextIds}
+                  selectedId={selectedId}
                   hasChildren={hasChildren}
                   onToggleExpand={expand}
                   onSelect={setSelectedId}
