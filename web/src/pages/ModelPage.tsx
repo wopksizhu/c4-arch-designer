@@ -89,32 +89,18 @@ export default function ModelPage() {
 
   const elementById = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
 
-  // 钻取式：保留父级与外部关联（上下文节点），便于查看交互关系
+  // 钻取式：父级作为边界框，子元素绘制在框内部（C4 的“包含”模型）
   const visibleElements = useMemo(() => {
     if (drilledId === null) return elements.filter((e) => (e.parentId ?? null) === null);
     const children = elements.filter((e) => e.parentId === drilledId);
     const parent = elementById.get(drilledId);
-    const related = new Set<number>();
-    relationships.forEach((r) => {
-      if (r.sourceId === drilledId) related.add(r.targetId);
-      if (r.targetId === drilledId) related.add(r.sourceId);
-    });
-    const external = [...related]
-      .map((id) => elementById.get(id))
-      .filter((e): e is Element => !!e && e.id !== drilledId && e.parentId !== drilledId);
-    return parent ? [parent, ...children, ...external] : children;
-  }, [elements, drilledId, relationships, elementById]);
+    return parent ? [parent, ...children] : children;
+  }, [elements, drilledId, elementById]);
 
   const contextIds = useMemo(() => {
     if (drilledId === null) return new Set<number>();
-    const ids = new Set<number>([drilledId]);
-    const isChild = (id: number) => elementById.get(id)?.parentId === drilledId;
-    relationships.forEach((r) => {
-      if (r.sourceId === drilledId && !isChild(r.targetId)) ids.add(r.targetId);
-      if (r.targetId === drilledId && !isChild(r.sourceId)) ids.add(r.sourceId);
-    });
-    return ids;
-  }, [drilledId, relationships, elementById]);
+    return new Set<number>([drilledId]);
+  }, [drilledId]);
 
   const visibleIds = useMemo(() => new Set(visibleElements.map((e) => e.id)), [visibleElements]);
   const visibleRelationships = useMemo(
@@ -198,7 +184,22 @@ export default function ModelPage() {
             <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
               {showTree && (
                 <aside style={{ width: 250, borderRight: '1px solid var(--border)', background: 'var(--surface)', overflow: 'auto' }}>
-                  <ElementTree elements={elements} drilledId={drilledId} onSelect={(id) => setSelectedId(String(id))} onDrill={setDrilledId} />
+                  <ElementTree
+                    elements={elements}
+                    drilledId={drilledId}
+                    onSelect={(id) => setSelectedId(String(id))}
+                    onDrill={setDrilledId}
+                    onReparent={async (childId, newParentId) => {
+                      const parent = newParentId != null ? elements.find((e) => e.id === newParentId) : null;
+                      try {
+                        await api.updateElement(childId, { parentId: newParentId, level: parent ? parent.level + 1 : 1 });
+                        reload();
+                      } catch (err: any) {
+                        // eslint-disable-next-line no-alert
+                        alert((err as Error).message || '调整层级失败');
+                      }
+                    }}
+                  />
                 </aside>
               )}
               <div style={{ flex: 1, position: 'relative' }}>
