@@ -141,8 +141,9 @@ export function buildEdges(
   for (const d of drafts) {
     const key = d.sourceId < d.targetId ? `${d.sourceId}-${d.targetId}` : `${d.targetId}-${d.sourceId}`;
     const e = dirPairs.get(key);
-    d.arc = !!(e && e.fwd && e.rev); // 仅双向边用弧形绕开
-    if (d.arc) d.arcDir = d.sourceId < d.targetId ? 'top' : 'bottom'; // A→B 走上、B→A 走下
+    // 双向边中，反向(B→A, sourceId>targetId)绕开到另一侧；正向(A→B)走直的、端点铺开
+    d.arc = !!(e && e.fwd && e.rev && d.sourceId > d.targetId);
+    if (d.arc) d.arcDir = 'bottom';
   }
 
   return drafts;

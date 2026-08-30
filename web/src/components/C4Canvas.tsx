@@ -526,11 +526,11 @@ export default function C4Canvas({
   const elMap = useMemo(() => new Map(renderElements.map((e) => [e.id, e])), [renderElements]);
   const visibleNum = useMemo(() => new Set(elements.map((e) => e.id)), [elements]);
   const edgeDrafts = useMemo(() => buildEdges(allRelationships, allElements, visibleNum, contextIds), [allRelationships, allElements, visibleNum, contextIds]);
-  // 同一对框体(不分方向)之间的多条线：给每条线一个 fanIndex/count，用于错开端点与弧线，避免重叠
+  // 按「有向 (source→target)」分组：同向并行 / 双向每个方向内部，各自均匀错开，避免多条线重叠
   const pairFan = useMemo(() => {
     const groups = new Map<string, string[]>();
     edgeDrafts.forEach((d) => {
-      const k = `${Math.min(d.sourceId, d.targetId)}-${Math.max(d.sourceId, d.targetId)}`;
+      const k = `${d.sourceId}|${d.targetId}`;
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k)!.push(d.id);
     });
@@ -547,28 +547,23 @@ export default function C4Canvas({
       const t = elMap.get(d.targetId);
       if (!s || !t) return;
       const f = pairFan.get(d.id) || { index: 0, count: 1 };
-      const spread = d.arc ? 0 : f.count > 1 ? ((f.index - (f.count - 1) / 2) / Math.max(f.count - 1, 1)) * 0.62 : 0; // 同向并行才错开；双向边用上下边
+      // 有向组内均匀错开：同向并行/双向各方向内部等距铺开，线多也不重叠
+      const frac = f.count > 1 ? 0.16 + (f.index / (f.count - 1)) * 0.68 : 0.5;
       let srcSide: Position;
       let tgtSide: Position;
-      let srcFrac: number;
-      let tgtFrac: number;
       if (d.arc) {
-        // 按框体相对轴选择绕开方向：水平排布走上/下边，垂直排布走右/左边（避免绕框打圈）
+        // 反向边绕到“另一侧”：水平排布走下边(bottom)，垂直堆叠走左边(left)，避开正向直线
         const dx = t.posX - s.posX, dy = t.posY - s.posY;
         const horizontal = Math.abs(dx) >= Math.abs(dy);
-        const up = d.arcDir === 'top';
-        srcSide = horizontal ? (up ? Position.Top : Position.Bottom) : (up ? Position.Right : Position.Left);
+        srcSide = horizontal ? Position.Bottom : Position.Left;
         tgtSide = srcSide;
-        srcFrac = 0.5; tgtFrac = 0.5;
       } else {
         const se = computeExit(s.posX, s.posY, t.posX, t.posY, undefined);
         const te = computeExit(t.posX, t.posY, s.posX, s.posY, undefined);
         srcSide = se.side; tgtSide = te.side;
-        srcFrac = Math.max(0.16, Math.min(0.84, se.frac + spread));
-        tgtFrac = Math.max(0.16, Math.min(0.84, te.frac + spread));
       }
-      ensure(d.sourceId).sources.push({ id: `s-${d.id}`, side: srcSide, frac: srcFrac });
-      ensure(d.targetId).targets.push({ id: `t-${d.id}`, side: tgtSide, frac: tgtFrac });
+      ensure(d.sourceId).sources.push({ id: `s-${d.id}`, side: srcSide, frac });
+      ensure(d.targetId).targets.push({ id: `t-${d.id}`, side: tgtSide, frac });
     });
     return m;
   }, [edgeDrafts, elMap, pairFan]);
@@ -588,8 +583,7 @@ export default function C4Canvas({
       if (d.arc && s && t) {
         const dx = t.posX - s.posX, dy = t.posY - s.posY;
         const horizontal = Math.abs(dx) >= Math.abs(dy);
-        const up = d.arcDir === 'top';
-        spPos = horizontal ? (up ? Position.Top : Position.Bottom) : (up ? Position.Right : Position.Left);
+        spPos = horizontal ? Position.Bottom : Position.Left;
         tpPos = spPos;
       } else {
         const hp = s && t ? pickPositions({ x: s.posX, y: s.posY }, { x: t.posX, y: t.posY }) : undefined;
