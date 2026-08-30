@@ -113,10 +113,11 @@ export default function ModelPage() {
   }, [reload]);
 
   // 自动布局：分层(Sugiyama)算法，按连线关系排层、层内重心排序减少交叉，处理父子包含
-  const applyLayout = async (dir?: 'down' | 'right') => {
+  const applyLayout = async (dir?: 'down' | 'right', exp?: Set<number>) => {
     const d = dir ?? layoutDir;
+    const e = exp ?? expanded;
     const before = snapPos();
-    const pos = graphLayout(elements, relationships, visibleIdsFor(expanded), expanded, d);
+    const pos = graphLayout(elements, relationships, visibleIdsFor(e), e, d);
     if (pos.size === 0) return;
     await Promise.all([...pos.entries()].map(([id, p]) => api.updateElement(id, { posX: p.x, posY: p.y })));
     setElements((prev) => prev.map((e) => (pos.has(e.id) ? { ...e, posX: pos.get(e.id)!.x, posY: pos.get(e.id)!.y } : e)));
