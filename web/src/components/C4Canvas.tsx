@@ -547,11 +547,23 @@ export default function C4Canvas({
       const t = elMap.get(d.targetId);
       if (!s || !t) return;
       const f = pairFan.get(d.id) || { index: 0, count: 1 };
-      const spread = f.count > 1 ? ((f.index - (f.count - 1) / 2) / Math.max(f.count - 1, 1)) * 0.62 : 0; // 同对多条：沿边适度错开
-      const se = computeExit(s.posX, s.posY, t.posX, t.posY, d.arc ? 'bottom' : undefined);
-      const te = computeExit(t.posX, t.posY, s.posX, s.posY, d.arc ? 'top' : undefined);
-      ensure(d.sourceId).sources.push({ id: `s-${d.id}`, side: se.side, frac: Math.max(0.16, Math.min(0.84, se.frac + spread)) });
-      ensure(d.targetId).targets.push({ id: `t-${d.id}`, side: te.side, frac: Math.max(0.16, Math.min(0.84, te.frac + spread)) });
+      const spread = d.arc ? 0 : f.count > 1 ? ((f.index - (f.count - 1) / 2) / Math.max(f.count - 1, 1)) * 0.62 : 0; // 同向并行才错开；双向边用上下边
+      let srcSide: Position;
+      let tgtSide: Position;
+      let srcFrac: number;
+      let tgtFrac: number;
+      if (d.arc) {
+        const side = d.arcDir === 'bottom' ? Position.Bottom : Position.Top;
+        srcSide = side; tgtSide = side; srcFrac = 0.5; tgtFrac = 0.5;
+      } else {
+        const se = computeExit(s.posX, s.posY, t.posX, t.posY, undefined);
+        const te = computeExit(t.posX, t.posY, s.posX, s.posY, undefined);
+        srcSide = se.side; tgtSide = te.side;
+        srcFrac = Math.max(0.16, Math.min(0.84, se.frac + spread));
+        tgtFrac = Math.max(0.16, Math.min(0.84, te.frac + spread));
+      }
+      ensure(d.sourceId).sources.push({ id: `s-${d.id}`, side: srcSide, frac: srcFrac });
+      ensure(d.targetId).targets.push({ id: `t-${d.id}`, side: tgtSide, frac: tgtFrac });
     });
     return m;
   }, [edgeDrafts, elMap, pairFan]);
@@ -567,7 +579,7 @@ export default function C4Canvas({
       const s = elMap.get(d.sourceId);
       const t = elMap.get(d.targetId);
       const hp = d.arc
-        ? { sp: Position.Bottom, tp: Position.Top }
+        ? (d.arcDir === 'bottom' ? { sp: Position.Bottom, tp: Position.Bottom } : { sp: Position.Top, tp: Position.Top })
         : s && t
           ? pickPositions({ x: s.posX, y: s.posY }, { x: t.posX, y: t.posY })
           : undefined;

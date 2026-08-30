@@ -10,6 +10,7 @@ export interface EdgeDraft {
   missing: boolean;
   relationshipId: number;
   arc?: boolean;
+  arcDir?: 'top' | 'bottom'; // 双向边：A→B 走上边(top)、B→A 走下边(bottom)，避免交叉
 }
 
 export function parseMessages(r: Relationship): RelationshipMessage[] {
@@ -141,6 +142,7 @@ export function buildEdges(
     const key = d.sourceId < d.targetId ? `${d.sourceId}-${d.targetId}` : `${d.targetId}-${d.sourceId}`;
     const e = dirPairs.get(key);
     d.arc = !!(e && e.fwd && e.rev); // 仅双向边用弧形绕开
+    if (d.arc) d.arcDir = d.sourceId < d.targetId ? 'top' : 'bottom'; // A→B 走上、B→A 走下
   }
 
   return drafts;
