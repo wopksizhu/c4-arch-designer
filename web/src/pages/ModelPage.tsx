@@ -157,10 +157,15 @@ export default function ModelPage() {
   const displayPos = useMemo(() => minimalLayout(elements, visibleIdsFor(expanded), expanded), [elements, visibleIdsFor, expanded]);
 
   const expand = (id: number) => {
+    const willExpand = !expanded.has(id);
     const n = new Set(expanded);
-    if (n.has(id)) n.delete(id);
-    else n.add(id);
+    if (willExpand) n.add(id); else n.delete(id);
     setExpanded(n);
+    // 展开时聚焦到父框+其子元素，让新内容就在眼前
+    if (willExpand) {
+      const children = elements.filter((e) => e.parentId === id).map((e) => e.id);
+      focusCanvas([id, ...children]);
+    }
   };
 
   const hasChildren = useCallback((id: number) => elements.some((e) => e.parentId === id), [elements]);
@@ -223,6 +228,7 @@ export default function ModelPage() {
     const e = await api.createElement(pid, payload);
     setElements((prev) => [...prev, e]);
     if (parentId != null) setExpanded((prev) => new Set(prev).add(parentId));
+    focusCanvas([e.id]); // 加完就让画布聚焦到新元素
     // 撤销=删除新增；重做=重建
     pushHistory({ undo: async () => { await api.deleteElement(e.id); setElements((prev) => prev.filter((x) => x.id !== e.id)); }, redo: async () => { const ne = await api.createElement(pid, payload); setElements((prev) => [...prev, ne]); } });
     return e;
@@ -432,6 +438,8 @@ export default function ModelPage() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showUntraced, setShowUntraced] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [focusReq, setFocusReq] = useState<{ ids: string[]; n: number }>({ ids: [], n: 0 });
+  const focusCanvas = (ids: number[]) => { setFocusReq((p) => ({ ids: ids.map(String), n: p.n + 1 })); };
   const [views, setViews] = useState<View[]>([]);
   const [currentViewId, setCurrentViewId] = useState<number | null>(null);
   const [theme] = useState<'light' | 'neon'>('neon');
@@ -631,6 +639,7 @@ export default function ModelPage() {
                   selectedEdgeId={selectedEdgeId}
                   searchTerm={searchTerm}
                   theme={theme}
+                  focusRequest={focusReq}
                   hasChildren={hasChildren}
                   onToggleExpand={expand}
                   onSelect={setSelectedId}

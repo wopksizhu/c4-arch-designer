@@ -398,6 +398,7 @@ type Props = {
   selectedEdgeId?: string | null;
   searchTerm?: string;
   theme?: 'light' | 'neon';
+  focusRequest?: { ids: string[]; n: number };
   hasChildren: (id: number) => boolean;
   onToggleExpand: (id: number) => void;
   onSelect: (id: string | null) => void;
@@ -427,6 +428,7 @@ export default function C4Canvas({
   selectedEdgeId = null,
   searchTerm = '',
   theme = 'light',
+  focusRequest,
   hasChildren,
   onToggleExpand,
   onSelect,
@@ -481,6 +483,21 @@ export default function C4Canvas({
   connectStartHandler = startConn; // 暴露给节点主体热区
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
   const [hoverEdgeId, setHoverEdgeId] = useState<string | null>(null);
+  // 外部请求聚焦：把视口移到指定节点（加完元素/展开父框后），用 getViewportForBounds 精确缩放
+  useEffect(() => {
+    const rf = rfRef.current;
+    if (!rf || !focusRequest?.ids?.length || !rf.getNodes) return;
+    const t = setTimeout(() => {
+      const nodes = rf.getNodes().filter((n: any) => focusRequest.ids.includes(String(n.id)));
+      if (!nodes.length) return;
+      const bounds = getNodesBounds(nodes);
+      const el = document.querySelector('.react-flow') as HTMLElement | null;
+      const w = el?.clientWidth || 1200;
+      const h = el?.clientHeight || 800;
+      rf.setViewport(getViewportForBounds(bounds, w, h, 0.2, 1.3, 0.3));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [focusRequest]);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const flowPosRef = useRef<{ x: number; y: number } | null>(null);
   const rfRef = useRef<any>(null);
