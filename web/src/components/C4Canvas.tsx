@@ -117,8 +117,8 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
       {isNeon ? (
         <>
           <defs>
-            <marker id={`${id}-arr`} markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-              <path d="M0,0 L0,6 L9,3 z" fill={data?.solid ? data?.solidColor : data?.targetColor || '#888'} />
+            <marker id={`${id}-arr`} markerWidth="9" markerHeight="9" refX="7" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
+              <path d="M0,0 L0,5 L8,2.5 z" fill={data?.solid ? data?.solidColor : data?.targetColor || '#888'} />
             </marker>
             {!data?.solid && (
               <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
@@ -131,7 +131,7 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
             d={path}
             fill="none"
             stroke={data?.solid ? data?.solidColor : `url(#${id}-grad)`}
-            strokeWidth={2.2}
+            strokeWidth={2}
             strokeLinecap="round"
             markerEnd={`url(#${id}-arr)`}
             style={{ filter: `drop-shadow(0 0 3px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` }}
@@ -598,7 +598,7 @@ export default function C4Canvas({
       const baseColor = d.missing ? '#dc2626' : inCycle ? '#f59e0b' : linked ? '#2563eb' : protoColor || '#94a3b8';
       const asyncEdge = isAsync(d.label, d.protocol);
       const f = pairFan.get(d.id) || { index: 0, count: 1 };
-      const curvature = d.arc ? 0.25 : f.count > 1 ? 0.05 : 0.18;
+      const curvature = d.arc ? 0.25 : f.count > 1 ? 0.2 : 0.18;
       return {
         id: d.id,
         source: String(d.sourceId),
