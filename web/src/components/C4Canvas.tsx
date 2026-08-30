@@ -117,8 +117,8 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
       {isNeon ? (
         <>
           <defs>
-            <marker id={`${id}-arr`} markerWidth="9" markerHeight="9" refX="7" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M0,0 L0,5 L8,2.5 z" fill={data?.solid ? data?.solidColor : data?.targetColor || '#888'} />
+            <marker id={`${id}-arr`} markerWidth="10" markerHeight="10" refX="9" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
+              <path d="M9,2.5 C7,4.4 4.2,5.2 0,5.2 C2.8,3.9 2.8,1.1 0,-0.2 C4.2,-0.2 7,0.6 9,2.5 Z" fill={data?.solid ? data?.solidColor : data?.targetColor || '#888'} />
             </marker>
             {!data?.solid && (
               <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
