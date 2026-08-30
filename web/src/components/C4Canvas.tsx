@@ -118,27 +118,24 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
     <>
       {isNeon ? (
         <>
-          <defs>
-            <marker id={`${id}-arr`} markerWidth="10" markerHeight="10" refX="9" refY="2.5" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M9,2.5 C7,4.4 4.2,5.2 0,5.2 C2.8,3.9 2.8,1.1 0,-0.2 C4.2,-0.2 7,0.6 9,2.5 Z" fill={data?.solid ? data?.solidColor : data?.targetColor || '#888'} />
-            </marker>
-            {!data?.solid && (
+          {!data?.solid && (
+            <defs>
               <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0%" stopColor={data?.sourceColor || '#888'} />
                 <stop offset="100%" stopColor={data?.targetColor || '#888'} />
               </linearGradient>
-            )}
-          </defs>
+            </defs>
+          )}
           <path
             d={path}
             fill="none"
+            className="c4-edge-path"
             stroke={data?.solid ? data?.solidColor : `url(#${id}-grad)`}
             strokeWidth={strokeW}
             strokeLinecap="round"
-            markerEnd={`url(#${id}-arr)`}
             style={{ filter: active ? `drop-shadow(0 0 6px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` : `drop-shadow(0 0 2px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'}66)` }}
           />
-          {/* 数据流小光点：沿曲线从源→目标流动 */}
+          {/* 数据流小光点：沿曲线从源→目标流动（无箭头） */}
           <circle r={active ? 4 : 2.6} fill={data?.solid ? data?.solidColor : data?.targetColor || '#9be7ff'} style={{ filter: `drop-shadow(0 0 5px ${data?.solid ? data?.solidColor : data?.targetColor || '#9be7ff'})` }}>
             <animateMotion dur="2.2s" repeatCount="indefinite" rotate="auto" path={path} />
           </circle>

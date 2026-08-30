@@ -24,7 +24,7 @@ async function rel(request: any, pid: number, s: number, t: number, lbl: string)
 async function edgeStarts(page: any): Promise<Array<[number, number]>> {
   return page.evaluate(() => {
     const out: Array<[number, number]> = [];
-    document.querySelectorAll('path[marker-end]').forEach((p) => {
+    document.querySelectorAll('path.c4-edge-path').forEach((p) => {
       const d = p.getAttribute('d') || '';
       const m = d.match(/M\s*([-\d.]+)[\s,]+([-\d.]+)/);
       if (m) out.push([parseFloat(m[1]), parseFloat(m[2])]);

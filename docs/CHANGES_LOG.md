@@ -7,7 +7,10 @@
 
 ## 最新
 
-### 2026-xx-xx 框体半透明 + 连线数据流小光点
+### 2026-xx-xx 去掉连线箭头（用流动光点标识方向）
+- **移除连线箭头**（markerEnd），数据流方向**只由沿线流动的小光点**表示。
+- 主边路径加 `c4-edge-path` 类；相应更新 edge-layout / edge-gallery / hover 测试选择器。
+- 相关：`web/src/components/C4Canvas.tsx`、`web/e2e/edge-layout.spec.ts`、`edge-gallery.spec.ts`。
 - **框体半透明**：节点背景改 `rgba(13,11,19,.74)` + 微模糊，被框体遮住的连线能**透出**看到。
 - **连线数据流标识**（替代/辅助箭头）：每条线有一个**沿曲线流动的小光点**（SVG `animateMotion` 从源→目标流动），直观表示数据流向；hover/选中时光点更大更亮、线加粗。
 - 相关：`web/src/index.css`（`.c4-neon` 半透明）、`web/src/components/C4Canvas.tsx`（流动光点 circle + animateMotion）。

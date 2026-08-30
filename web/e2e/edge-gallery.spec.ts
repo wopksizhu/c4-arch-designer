@@ -21,7 +21,7 @@ async function rel(request: any, pid: number, s: number, t: number, lbl: string)
   await request.post(`${BASE}/projects/${pid}/relationships`, { data: { sourceId: s, targetId: t, label: lbl, interaction: lbl, level: 1, messages: msg } });
 }
 async function edgeCount(page: any): Promise<number> {
-  return page.evaluate(() => document.querySelectorAll('path[marker-end]').length);
+  return page.evaluate(() => document.querySelectorAll('path.c4-edge-path').length);
 }
 
 async function shoot(page: any, name: string, expectCount: number) {
