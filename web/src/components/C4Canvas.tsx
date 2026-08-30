@@ -553,8 +553,13 @@ export default function C4Canvas({
       let srcFrac: number;
       let tgtFrac: number;
       if (d.arc) {
-        const side = d.arcDir === 'bottom' ? Position.Bottom : Position.Top;
-        srcSide = side; tgtSide = side; srcFrac = 0.5; tgtFrac = 0.5;
+        // 按框体相对轴选择绕开方向：水平排布走上/下边，垂直排布走右/左边（避免绕框打圈）
+        const dx = t.posX - s.posX, dy = t.posY - s.posY;
+        const horizontal = Math.abs(dx) >= Math.abs(dy);
+        const up = d.arcDir === 'top';
+        srcSide = horizontal ? (up ? Position.Top : Position.Bottom) : (up ? Position.Right : Position.Left);
+        tgtSide = srcSide;
+        srcFrac = 0.5; tgtFrac = 0.5;
       } else {
         const se = computeExit(s.posX, s.posY, t.posX, t.posY, undefined);
         const te = computeExit(t.posX, t.posY, s.posX, s.posY, undefined);
@@ -578,11 +583,19 @@ export default function C4Canvas({
       // 每条线用独立锚点（s-<edgeId>/t-<edgeId>），按相对方向求边
       const s = elMap.get(d.sourceId);
       const t = elMap.get(d.targetId);
-      const hp = d.arc
-        ? (d.arcDir === 'bottom' ? { sp: Position.Bottom, tp: Position.Bottom } : { sp: Position.Top, tp: Position.Top })
-        : s && t
-          ? pickPositions({ x: s.posX, y: s.posY }, { x: t.posX, y: t.posY })
-          : undefined;
+      let spPos: Position | undefined;
+      let tpPos: Position | undefined;
+      if (d.arc && s && t) {
+        const dx = t.posX - s.posX, dy = t.posY - s.posY;
+        const horizontal = Math.abs(dx) >= Math.abs(dy);
+        const up = d.arcDir === 'top';
+        spPos = horizontal ? (up ? Position.Top : Position.Bottom) : (up ? Position.Right : Position.Left);
+        tpPos = spPos;
+      } else {
+        const hp = s && t ? pickPositions({ x: s.posX, y: s.posY }, { x: t.posX, y: t.posY }) : undefined;
+        spPos = hp?.sp;
+        tpPos = hp?.tp;
+      }
       const protoColor = protocolColor(d.protocol);
       const inCycle = cycleEdges.has(d.relationshipId);
       const isNeon = theme === 'neon';
@@ -599,8 +612,8 @@ export default function C4Canvas({
         type: 'messageEdge',
         sourceHandle: `s-${d.id}`,
         targetHandle: `t-${d.id}`,
-        sourcePosition: hp?.sp,
-        targetPosition: hp?.tp,
+        sourcePosition: spPos,
+        targetPosition: tpPos,
         data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature, solid: d.missing || inCycle || linked, solidColor: baseColor },
         animated: linked,
         markerEnd: { type: MarkerType.ArrowClosed, color: baseColor, width: 18, height: 18 },
