@@ -137,7 +137,9 @@ test('自动布局：子元素仍在父框内，且同层节点不重叠', async
 
   await page.goto(`/project/${proj.id}`);
   await page.waitForTimeout(1200);
-  await page.getByRole('button', { name: '全部展开' }).click();
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '全部展开' }).first().click();
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: '自动布局' }).click();
   await page.waitForTimeout(1200);
@@ -355,8 +357,10 @@ test('复制/粘贴元素（含子元素与内部关系）', async ({ page, requ
   await page.waitForTimeout(400);
   await page.getByText('复制元素').click();
   await page.waitForTimeout(500);
-  // 顶栏「粘贴」→ 生成一个副本（新 Sys + 其子 Web）
-  await page.getByRole('button', { name: '粘贴' }).click();
+  // 「…更多 → 粘贴」→ 生成一个副本（新 Sys + 其子 Web）
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '粘贴' }).first().click();
   await page.waitForTimeout(1000);
 
   const elems = (await (await request.get(`${base}/projects/${proj.id}/elements`)).json()).data;
@@ -378,7 +382,10 @@ test('布局方向切换（上下/左右）', async ({ page, request }) => {
   await request.post(`${base}/projects/${proj.id}/elements`, { data: { level: 1, type: 'softwareSystem', name: 'BetaSys', parentId: null, posX: 200, posY: 300 } });
   await page.goto(`/project/${proj.id}`);
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: '⇩ 上下布局' }).click(); // 切到 左右 并自动布局
+  // 「…更多 → 布局方向」切换 上下/左右 并自动布局
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '上下布局' }).first().click();
   await page.waitForTimeout(900);
   await expect(page.locator('.react-flow__node', { hasText: 'AlphaSys' }).first()).toBeVisible();
   await expect(page.locator('.react-flow__node', { hasText: 'BetaSys' }).first()).toBeVisible();
@@ -395,7 +402,9 @@ test('校验面板：列出缺失(红)消息', async ({ page, request }) => {
   await request.post(`${base}/projects/${proj.id}/relationships`, { data: { sourceId: s1.id, targetId: s2.id, label: 'm1', interaction: 'm1', level: 1, messages: JSON.stringify([{ name: 'm1', protocol: '', senderId: null, receiverId: null }]) } });
   await page.goto(`/project/${proj.id}`);
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: /校验/ }).click();
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '校验' }).first().click();
   await page.waitForTimeout(500);
   await expect(page.getByText('A → B').first()).toBeVisible();
   await expect(page.getByText('m1').first()).toBeVisible();
@@ -477,7 +486,9 @@ test('常用系统模板一键生成', async ({ page, request }) => {
   createdProjects.push(proj.id);
   await page.goto(`/project/${proj.id}`);
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: '模板' }).click();
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '模板' }).first().click();
   await page.waitForTimeout(300);
   await page.getByText('订单系统').first().click();
   await page.waitForTimeout(1200);
@@ -495,7 +506,9 @@ test('未追溯需求提醒', async ({ page, request }) => {
   await request.post(`${base}/projects/${proj.id}/requirements`, { data: { title: '已追溯需求B', code: 'R-002', priority: 'medium' } });
   await page.goto(`/project/${proj.id}`);
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: /未追溯/ }).click();
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '未追溯' }).first().click();
   await page.waitForTimeout(400);
   await expect(page.getByText('未追溯需求A').first()).toBeVisible();
 });
@@ -525,12 +538,16 @@ test('多视图：新建/保存视图', async ({ page, request }) => {
   expect(views[0].name).toBe('主视图');
   await page.goto(`/project/${proj.id}`);
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: '+ 新建视图' }).click();
-  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '+ 新建视图' }).first().click();
+  await page.waitForTimeout(500);
   views = (await (await request.get(`${base}/projects/${proj.id}/views`)).json()).data;
   expect(views.length).toBe(2);
   // 保存当前视图（不报错）
-  await page.getByRole('button', { name: '存为视图' }).click();
+  await page.getByRole('button', { name: '… 更多' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.menu-item', { hasText: '存为视图' }).first().click();
   await page.waitForTimeout(600);
   const updated = (await (await request.get(`${base}/projects/${proj.id}/views`)).json()).data.find((v) => !v.isDefault);
   expect(updated.payload).toContain('"elemId"');

@@ -430,6 +430,7 @@ export default function ModelPage() {
   const [showValidation, setShowValidation] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showUntraced, setShowUntraced] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const [views, setViews] = useState<View[]>([]);
   const [currentViewId, setCurrentViewId] = useState<number | null>(null);
   const [theme] = useState<'light' | 'neon'>('neon');
@@ -542,19 +543,6 @@ export default function ModelPage() {
               <strong>{project?.name || '…'}</strong>
               <div className="grow" />
               <span className="muted" style={{ fontSize: 12 }}>点元素上「展开」可查看内部，右键可添加/删除</span>
-              <span className="muted" style={{ fontSize: 12 }}>视图：</span>
-              <select
-                value={currentViewId ?? ''}
-                onChange={(e) => { const id = Number(e.target.value); if (id) switchView(id); }}
-                style={{ maxWidth: 150, fontSize: 12, padding: '5px 8px' }}
-              >
-                {views.length === 0 && <option value="">无视图</option>}
-                {views.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
-              </select>
-              <button className="ghost sm" onClick={() => saveCurrentView()}>存为视图</button>
-              <button className="ghost sm" onClick={() => newView()}>+ 新建视图</button>
               <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
                 <input
                   value={searchTerm}
@@ -569,29 +557,40 @@ export default function ModelPage() {
               </div>
               <span className="pill" style={{ color: '#dc2626', borderColor: '#dc2626', background: '#fef2f2', fontSize: 11 }}>红线 = 系统消息未落到容器（缺失）</span>
               <button className="ghost sm" onClick={() => applyLayout()}>自动布局</button>
-              <button className={`ghost sm ${showTemplates ? 'active' : ''}`} onClick={() => setShowTemplates(!showTemplates)} style={{ position: 'relative' }}>
-                模板
-                {showTemplates && (
-                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, width: 240, fontSize: 12 }}>
-                    {TEMPLATES.map((t) => (
-                      <div key={t.id} className="menu-item" onClick={() => applyTemplate(t)}>
-                        <div style={{ fontWeight: 600 }}>{t.name}</div>
-                        <div className="muted" style={{ fontSize: 11 }}>{t.desc}</div>
-                      </div>
+              <button className="ghost sm" disabled={!history.length} onClick={() => doUndo()}>↶ 撤销</button>
+              <button className="ghost sm" disabled={!future.length} onClick={() => doRedo()}>↷ 重做</button>
+              <button className={`ghost sm ${showMore ? 'active' : ''}`} onClick={() => setShowMore(!showMore)} style={{ position: 'relative' }}>
+                … 更多
+                {showMore && (
+                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 8, width: 250, fontSize: 12 }} onClick={(e) => e.stopPropagation()}>
+                    <div className="menu-title">面板</div>
+                    <div className="menu-item" onClick={() => { setShowTree(!showTree); setShowMore(false); }}>元素结构 {showTree ? '✓' : ''}</div>
+                    <div className="menu-item" onClick={() => { setShowLegend(!showLegend); setShowMore(false); }}>图例 {showLegend ? '✓' : ''}</div>
+                    <div className="menu-item" onClick={() => { setShowValidation(!showValidation); setShowMore(false); }}>校验 ({validation.length}) {showValidation ? '✓' : ''}</div>
+                    <div className="menu-item" onClick={() => { setShowUntraced(!showUntraced); setShowMore(false); }}>未追溯 ({untracedReqs.length}) {showUntraced ? '✓' : ''}</div>
+                    <div className="menu-sep" />
+                    <div className="menu-title">页面</div>
+                    <div className="menu-item" onClick={() => { setExpanded(new Set(elements.filter((e) => hasChildren(e.id)).map((e) => e.id))); setShowMore(false); }}>全部展开</div>
+                    <div className="menu-item" onClick={() => { setExpanded(new Set()); setShowMore(false); }}>全部收起</div>
+                    <div className="menu-item" onClick={() => { const nd = layoutDir === 'down' ? 'right' : 'down'; setLayoutDir(nd); applyLayout(nd); setShowMore(false); }}>{layoutDir === 'down' ? '⇩ 上下布局' : '⇨ 左右布局'}</div>
+                    <div className="menu-sep" />
+                    <div className="menu-title">视图</div>
+                    <select value={currentViewId ?? ''} onChange={(e) => { const id = Number(e.target.value); if (id) switchView(id); setShowMore(false); }} style={{ width: '100%', fontSize: 12, padding: '4px 6px' }}>
+                      {views.length === 0 && <option value="">无视图</option>}
+                      {views.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}
+                    </select>
+                    <div className="menu-item" onClick={() => { saveCurrentView(); setShowMore(false); }}>存为视图</div>
+                    <div className="menu-item" onClick={() => { newView(); setShowMore(false); }}>+ 新建视图</div>
+                    <div className="menu-sep" />
+                    <div className="menu-title">操作</div>
+                    <div className="menu-item" onClick={() => { if (clipboard) pasteAsRoot(); setShowMore(false); }}>粘贴</div>
+                    <div className="menu-item" onClick={() => setShowTemplates(!showTemplates)}>模板 {showTemplates ? '✓' : ''}</div>
+                    {showTemplates && TEMPLATES.map((t) => (
+                      <div key={t.id} className="menu-item" style={{ paddingLeft: 18 }} onClick={() => { applyTemplate(t); setShowMore(false); }}>↳ {t.name}</div>
                     ))}
                   </div>
                 )}
               </button>
-              <button className="ghost sm" disabled={!history.length} onClick={() => doUndo()}>↶ 撤销</button>
-              <button className="ghost sm" disabled={!future.length} onClick={() => doRedo()}>↷ 重做</button>
-              <button className="ghost sm" onClick={() => { const nd = layoutDir === 'down' ? 'right' : 'down'; setLayoutDir(nd); applyLayout(nd); }}>{layoutDir === 'down' ? '⇩ 上下布局' : '⇨ 左右布局'}</button>
-              <button className="ghost sm" onClick={() => setExpanded(new Set(elements.filter((e) => hasChildren(e.id)).map((e) => e.id)))}>全部展开</button>
-              <button className="ghost sm" onClick={() => setExpanded(new Set())}>全部收起</button>
-              <button className={`ghost sm ${showTree ? 'active' : ''}`} onClick={() => setShowTree(!showTree)}>元素结构</button>
-              <button className={`ghost sm ${showLegend ? 'active' : ''}`} onClick={() => setShowLegend(!showLegend)}>图例</button>
-              <button className={`ghost sm ${showValidation ? 'active' : ''}`} onClick={() => setShowValidation(!showValidation)}>校验 ({validation.length})</button>
-              <button className={`ghost sm ${showUntraced ? 'active' : ''}`} onClick={() => setShowUntraced(!showUntraced)}>未追溯 ({untracedReqs.length})</button>
-              <button className="ghost sm" disabled={!clipboard} onClick={() => pasteAsRoot()}>粘贴</button>
               <span style={{ width: 8 }} />
               <div className="adds">
                 {TYPES[1].map((t) => (
