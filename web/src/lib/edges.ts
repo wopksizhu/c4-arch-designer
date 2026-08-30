@@ -129,12 +129,18 @@ export function buildEdges(
     }
   }
 
-  // 双向/并行边：同一对端点的多条边，从第 2 条起用弧形绕开
-  const pairSeen = new Set<string>();
+  // 双向边(同一对端点存在 A→B 与 B→A)用「弧形绕开」避免重叠；同向并行边用端点错开
+  const dirPairs = new Map<string, { fwd: boolean; rev: boolean }>();
   for (const d of drafts) {
     const key = d.sourceId < d.targetId ? `${d.sourceId}-${d.targetId}` : `${d.targetId}-${d.sourceId}`;
-    if (pairSeen.has(key)) d.arc = true;
-    else pairSeen.add(key);
+    let e = dirPairs.get(key);
+    if (!e) { e = { fwd: false, rev: false }; dirPairs.set(key, e); }
+    if (d.sourceId < d.targetId) e.fwd = true; else e.rev = true;
+  }
+  for (const d of drafts) {
+    const key = d.sourceId < d.targetId ? `${d.sourceId}-${d.targetId}` : `${d.targetId}-${d.sourceId}`;
+    const e = dirPairs.get(key);
+    d.arc = !!(e && e.fwd && e.rev); // 仅双向边用弧形绕开
   }
 
   return drafts;
