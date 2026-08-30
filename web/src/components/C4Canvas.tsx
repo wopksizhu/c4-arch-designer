@@ -104,7 +104,7 @@ function anchorStyle(side: Position, frac: number, color: string): CSSProperties
 }
 
 // 自定义边：把连接线上的多条消息渲染成逐条堆叠的标签
-type MsgEdgeData = { relationshipId?: number; messageLabels?: string[]; neon?: boolean; sourceColor?: string; targetColor?: string; curvature?: number; solid?: boolean; solidColor?: string };
+type MsgEdgeData = { relationshipId?: number; messageLabels?: string[]; neon?: boolean; sourceColor?: string; targetColor?: string; curvature?: number; solid?: boolean; solidColor?: string; active?: boolean };
 type MsgEdgeType = Edge<MsgEdgeData, 'messageEdge'>;
 
 function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, data }: EdgeProps<MsgEdgeType>) {
@@ -112,6 +112,8 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
   const labels = data?.messageLabels && data.messageLabels.length ? data.messageLabels : ['uses'];
   const color = (style as any)?.stroke || '#475569';
   const isNeon = data?.neon;
+  const active = !!data?.active;
+  const strokeW = active ? 3 : 1.3;
   return (
     <>
       {isNeon ? (
@@ -131,49 +133,53 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
             d={path}
             fill="none"
             stroke={data?.solid ? data?.solidColor : `url(#${id}-grad)`}
-            strokeWidth={2}
+            strokeWidth={strokeW}
             strokeLinecap="round"
             markerEnd={`url(#${id}-arr)`}
-            style={{ filter: `drop-shadow(0 0 3px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` }}
+            style={{ filter: active ? `drop-shadow(0 0 6px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` : `drop-shadow(0 0 2px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'}66)` }}
           />
+          <path d={path} fill="none" stroke="transparent" strokeWidth={20} style={{ pointerEvents: 'stroke' }} />
         </>
       ) : (
         <BaseEdge path={path} style={style} markerEnd={markerEnd} />
       )}
-      <EdgeLabelRenderer>
-        <div
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 3,
-            alignItems: 'center',
-            pointerEvents: 'all',
-            zIndex: 5,
-          }}
-        >
-          {labels.map((l, i) => (
-            <div
-              key={i}
-              style={{
-                whiteSpace: 'nowrap',
-                fontSize: 11,
-                padding: '1px 8px',
-                borderRadius: 6,
-                background: isNeon ? '#151320' : '#fff',
-                border: isNeon ? `1px solid ${data?.sourceColor || '#555'}` : '1px solid #e2e8f0',
-                color: isNeon ? '#e6e6f0' : color,
-                fontWeight: 600,
-                lineHeight: 1.5,
-                boxShadow: isNeon ? `0 1px 4px rgba(0,0,0,.4)` : '0 1px 2px rgba(0,0,0,.06)',
-              }}
-            >
-              {l}
-            </div>
-          ))}
-        </div>
-      </EdgeLabelRenderer>
+      {active && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 3,
+              alignItems: 'center',
+              pointerEvents: 'all',
+              zIndex: 5,
+            }}
+          >
+            {labels.map((l, i) => (
+              <div
+                key={i}
+                data-edge-label="1"
+                style={{
+                  whiteSpace: 'nowrap',
+                  fontSize: 11,
+                  padding: '1px 8px',
+                  borderRadius: 6,
+                  background: isNeon ? '#151320' : '#fff',
+                  border: isNeon ? `1px solid ${data?.sourceColor || '#555'}` : '1px solid #e2e8f0',
+                  color: isNeon ? '#e6e6f0' : color,
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                  boxShadow: isNeon ? `0 1px 4px rgba(0,0,0,.4)` : '0 1px 2px rgba(0,0,0,.06)',
+                }}
+              >
+                {l}
+              </div>
+            ))}
+          </div>
+        </EdgeLabelRenderer>
+      )}
     </>
   );
 }
@@ -388,6 +394,7 @@ type Props = {
   overridePositions?: Map<number, { x: number; y: number }>;
   contextIds?: Set<number>;
   selectedId?: string | null;
+  selectedEdgeId?: string | null;
   searchTerm?: string;
   cycleEdges?: Set<number>;
   theme?: 'light' | 'neon';
@@ -417,6 +424,7 @@ export default function C4Canvas({
   overridePositions,
   contextIds = new Set(),
   selectedId = null,
+  selectedEdgeId = null,
   searchTerm = '',
   cycleEdges = new Set(),
   theme = 'light',
@@ -473,6 +481,7 @@ export default function C4Canvas({
   useEffect(() => { connRef.current = conn; }, [conn]);
   connectStartHandler = startConn; // 暴露给节点主体热区
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null);
+  const [hoverEdgeId, setHoverEdgeId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const flowPosRef = useRef<{ x: number; y: number } | null>(null);
   const rfRef = useRef<any>(null);
@@ -608,7 +617,7 @@ export default function C4Canvas({
         targetHandle: `t-${d.id}`,
         sourcePosition: spPos,
         targetPosition: tpPos,
-        data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature, solid: d.missing || inCycle || linked, solidColor: baseColor },
+        data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature, solid: d.missing || inCycle || linked, solidColor: baseColor, active: hoverEdgeId === d.id || selectedEdgeId === String(d.relationshipId) },
         animated: linked,
         markerEnd: { type: MarkerType.ArrowClosed, color: baseColor, width: 18, height: 18 },
         style: {
@@ -618,7 +627,7 @@ export default function C4Canvas({
         },
       };
     });
-  }, [edgeDrafts, pairFan, selectedId, elMap, cycleEdges, theme]);
+  }, [edgeDrafts, pairFan, selectedId, selectedEdgeId, hoverEdgeId, elMap, cycleEdges, theme]);
 
   const [nodeState, setNodes, onNodesChange] = useNodesState(nodes);
   const [edgeState, setEdges, onEdgesChange] = useEdgesState(edges);
@@ -690,6 +699,8 @@ export default function C4Canvas({
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
       onEdgeClick={(_e, edge) => { onSelect(null); onSelectEdge(String(edge.data?.relationshipId ?? edge.id)); setMenu(null); }}
+      onEdgeMouseEnter={(_e, edge) => setHoverEdgeId(edge.id)}
+      onEdgeMouseLeave={() => setHoverEdgeId(null)}
       onNodeClick={(_e, node) => { onSelect(node.id); onSelectEdge(null); setMenu(null); }}
       onPaneClick={() => { onSelect(null); onSelectEdge(null); setMenu(null); }}
       onNodeContextMenu={onNodeCtx}

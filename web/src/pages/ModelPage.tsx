@@ -631,6 +631,7 @@ export default function ModelPage() {
                   overridePositions={displayPos}
                   contextIds={contextIds}
                   selectedId={selectedId}
+                  selectedEdgeId={selectedEdgeId}
                   searchTerm={searchTerm}
                   cycleEdges={cycleInfo.edges}
                   theme={theme}

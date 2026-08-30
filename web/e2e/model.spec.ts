@@ -585,6 +585,28 @@ test('框体自由连线：抓框体空白拖到另一框体', async ({ page, re
   expect(rels[0].targetId).toBe(B.id);
 });
 
+test('连线默认无标签、hover 加粗并显示标签、点空白取消选中', async ({ page, request }) => {
+  const base = 'http://127.0.0.1:8080/api';
+  const proj = (await (await request.post(`${base}/projects`, { data: { name: 'e2e-edgehover-' + Date.now(), description: '' } })).json()).data;
+  createdProjects.push(proj.id);
+  const a = (await (await request.post(`${base}/projects/${proj.id}/elements`, { data: { level: 1, type: 'softwareSystem', name: 'A', parentId: null, posX: 300, posY: 400 } })).json()).data;
+  const b = (await (await request.post(`${base}/projects/${proj.id}/elements`, { data: { level: 1, type: 'softwareSystem', name: 'B', parentId: null, posX: 1000, posY: 400 } })).json()).data;
+  await request.post(`${base}/projects/${proj.id}/relationships`, { data: { sourceId: a.id, targetId: b.id, label: 'uses', interaction: 'uses', level: 1 } });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto(`/project/${proj.id}`);
+  await page.waitForTimeout(1800);
+  // 默认：无标签
+  expect(await page.locator('[data-edge-label]').count()).toBe(0);
+  // hover 边 → 显示标签（加粗由 active 状态驱动）
+  await page.locator('.react-flow__edge').first().hover({ force: true });
+  await page.waitForTimeout(500);
+  expect(await page.locator('[data-edge-label]').count()).toBeGreaterThanOrEqual(1);
+  // 点空白 → 取消选中（若之前选中）
+  await page.mouse.click(200, 200);
+  await page.waitForTimeout(300);
+  expect(await page.locator('.react-flow__node.selected').count()).toBe(0);
+});
+
 test('需求页：新增需求并关联容器，追溯矩阵可见', async ({ page }) => {
   await newProject(page);
   // 建一个系统 + 一个容器
