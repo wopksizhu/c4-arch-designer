@@ -7,7 +7,6 @@ import ComboInput from '../components/ComboInput';
 import { minimalLayout, NODE_H, CHILD_MIN_X, CHILD_MIN_Y } from '../lib/geometry';
 import { graphLayout } from '../lib/layout';
 import { parseMessages, buildEdges } from '../lib/edges';
-import { detectCycles } from '../lib/cycles';
 import type { PaletteItem } from '../lib/palette';
 import { INTERACTION_PRESETS, PROTOCOL_PRESETS, TECH_PRESETS, categoryForTech } from '../lib/presets';
 import { CATEGORY_LIST } from '../lib/visual';
@@ -197,8 +196,6 @@ export default function ModelPage() {
       });
   }, [relationships, elements, visibleIds, expanded]);
 
-  // 循环依赖检测（Tarjan SCC）——用于校验面板与画布高亮
-  const cycleInfo = useMemo(() => detectCycles(elements, relationships), [elements, relationships]);
 
   async function addElement(type: string, parentId?: number | null, extra?: { category?: string; technology?: string; name?: string; posX?: number; posY?: number }) {
     const parent = parentId != null ? elements.find((e) => e.id === parentId) : null;
@@ -633,7 +630,6 @@ export default function ModelPage() {
                   selectedId={selectedId}
                   selectedEdgeId={selectedEdgeId}
                   searchTerm={searchTerm}
-                  cycleEdges={cycleInfo.edges}
                   theme={theme}
                   hasChildren={hasChildren}
                   onToggleExpand={expand}
@@ -698,19 +694,6 @@ export default function ModelPage() {
                         >
                           <span className="muted" style={{ fontSize: 12 }}>{v.sName} → {v.tName}</span>
                           <span className="pill warn" style={{ fontSize: 10 }}>{v.label}</span>
-                        </div>
-                      ))
-                    )}
-                    <div className="muted" style={{ fontWeight: 700, margin: '10px 0 6px' }}>循环依赖（橙）</div>
-                    {cycleInfo.cycles.length === 0 ? (
-                      <div className="muted" style={{ fontSize: 12 }}>未检测到循环依赖 ✅</div>
-                    ) : (
-                      cycleInfo.cycles.map((c, i) => (
-                        <div key={i} className="menu-item" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-                          <span className="pill warn" style={{ fontSize: 10 }}>环</span>
-                          <span className="muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {c.map((id) => elements.find((e) => e.id === id)?.name ?? id).join(' → ')}
-                          </span>
                         </div>
                       ))
                     )}

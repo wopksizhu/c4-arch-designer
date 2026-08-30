@@ -397,7 +397,6 @@ type Props = {
   selectedId?: string | null;
   selectedEdgeId?: string | null;
   searchTerm?: string;
-  cycleEdges?: Set<number>;
   theme?: 'light' | 'neon';
   hasChildren: (id: number) => boolean;
   onToggleExpand: (id: number) => void;
@@ -427,7 +426,6 @@ export default function C4Canvas({
   selectedId = null,
   selectedEdgeId = null,
   searchTerm = '',
-  cycleEdges = new Set(),
   theme = 'light',
   hasChildren,
   onToggleExpand,
@@ -601,11 +599,10 @@ export default function C4Canvas({
         tpPos = hp?.tp;
       }
       const protoColor = protocolColor(d.protocol);
-      const inCycle = cycleEdges.has(d.relationshipId);
       const isNeon = theme === 'neon';
       const srcMeta = s ? metaFor({ category: (s as any).category, type: (s as any).type, technology: (s as any).technology }) : null;
       const tgtMeta = t ? metaFor({ category: (t as any).category, type: (t as any).type, technology: (t as any).technology }) : null;
-      const baseColor = d.missing ? '#dc2626' : inCycle ? '#f59e0b' : linked ? '#2563eb' : protoColor || '#94a3b8';
+      const baseColor = d.missing ? '#dc2626' : linked ? '#2563eb' : protoColor || '#94a3b8';
       const asyncEdge = isAsync(d.label, d.protocol);
       const f = pairFan.get(d.id) || { index: 0, count: 1 };
       const curvature = d.arc ? 0.25 : f.count > 1 ? 0.2 : 0.18;
@@ -618,17 +615,17 @@ export default function C4Canvas({
         targetHandle: `t-${d.id}`,
         sourcePosition: spPos,
         targetPosition: tpPos,
-        data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature, solid: d.missing || inCycle || linked, solidColor: baseColor, active: hoverEdgeId === d.id || selectedEdgeId === String(d.relationshipId) },
+        data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature, solid: d.missing || linked, solidColor: baseColor, active: hoverEdgeId === d.id || selectedEdgeId === String(d.relationshipId) },
         animated: linked,
         markerEnd: { type: MarkerType.ArrowClosed, color: baseColor, width: 18, height: 18 },
         style: {
           stroke: baseColor,
-          strokeWidth: d.missing || linked || inCycle ? 2 : 1.5,
-          strokeDasharray: inCycle ? '4 3' : asyncEdge ? '6 4' : undefined,
+          strokeWidth: d.missing || linked ? 2 : 1.5,
+          strokeDasharray: asyncEdge ? '6 4' : undefined,
         },
       };
     });
-  }, [edgeDrafts, pairFan, selectedId, selectedEdgeId, hoverEdgeId, elMap, cycleEdges, theme]);
+  }, [edgeDrafts, pairFan, selectedId, selectedEdgeId, hoverEdgeId, elMap, theme]);
 
   const [nodeState, setNodes, onNodesChange] = useNodesState(nodes);
   const [edgeState, setEdges, onEdgesChange] = useEdgesState(edges);

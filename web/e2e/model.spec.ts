@@ -514,29 +514,6 @@ test('元素悬浮信息', async ({ page, request }) => {
   await expect(page.locator('.c4-tip').first()).toContainText('Spring Boot');
 });
 
-test('循环依赖检测', async ({ page, request }) => {
-  const base = 'http://127.0.0.1:8080/api';
-  const proj = (await (await request.post(`${base}/projects`, { data: { name: 'e2e-cycle-' + Date.now(), description: '' } })).json()).data;
-  createdProjects.push(proj.id);
-  const a = (await (await request.post(`${base}/projects/${proj.id}/elements`, { data: { level: 1, type: 'softwareSystem', name: 'A', parentId: null, posX: 300, posY: 300 } })).json()).data;
-  const b = (await (await request.post(`${base}/projects/${proj.id}/elements`, { data: { level: 1, type: 'softwareSystem', name: 'B', parentId: null, posX: 700, posY: 300 } })).json()).data;
-  const c = (await (await request.post(`${base}/projects/${proj.id}/elements`, { data: { level: 1, type: 'softwareSystem', name: 'C', parentId: null, posX: 1100, posY: 300 } })).json()).data;
-  for (const [s, t] of [[a.id, b.id], [b.id, c.id], [c.id, a.id]]) {
-    await request.post(`${base}/projects/${proj.id}/relationships`, { data: { sourceId: s, targetId: t, label: 'uses', level: 1 } });
-  }
-  await page.goto(`/project/${proj.id}`);
-  await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: /校验/ }).click();
-  await page.waitForTimeout(500);
-  await expect(page.getByText('循环依赖（橙）').first()).toBeVisible();
-  await expect(page.getByText('环', { exact: true }).first()).toBeVisible();
-  // 环节点里含 A/B/C
-  const panelText = await page.locator('div').filter({ hasText: '循环依赖（橙）' }).first().innerText();
-  expect(panelText).toContain('A');
-  expect(panelText).toContain('B');
-  expect(panelText).toContain('C');
-});
-
 test('多视图：新建/保存视图', async ({ page, request }) => {
   const base = 'http://127.0.0.1:8080/api';
   const proj = (await (await request.post(`${base}/projects`, { data: { name: 'e2e-view-' + Date.now(), description: '' } })).json()).data;
