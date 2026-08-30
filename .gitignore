@@ -22,3 +22,6 @@ web/playwright-report/
 web/test-results/
 *.exe~
 *.tmp
+# 凭据（绝不可提交）
+.git-credentials
+.creds/
