@@ -61,7 +61,7 @@ test('父框严格包含子元素，且子元素拖拽不越出父框', async ({
 
   const system = page.locator('.c4-boundary').first();
   await expect(system).toBeVisible();
-  const child = page.locator('.c4-node').first();
+  const child = page.locator('.c4-neon').first();
   await expect(child).toBeVisible();
 
   const inBox = async () => {
@@ -74,10 +74,11 @@ test('父框严格包含子元素，且子元素拖拽不越出父框', async ({
   };
   await inBox();
 
-  // 把子元素往左上拖 200px，验证被约束在父框内（不越出左上）
-  const c = (await child.boundingBox())!;
-  const cx = c.x + c.width / 2;
-  const cy = c.y + c.height / 2;
+  // 拖「图标」移动子元素，验证被约束在父框内（不越出左上）
+  const childIcon = child.locator('.c4-neon-icon');
+  const ci = (await childIcon.boundingBox())!;
+  const cx = ci.x + ci.width / 2;
+  const cy = ci.y + ci.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 200, cy - 200, { steps: 10 });
@@ -97,9 +98,10 @@ test('拖动父元素后展开，子元素跟随父元素（仍在父框内）',
   // 收起系统 → 变为 c4 节点（可拖动）
   await page.locator('.c4-toggle').first().click();
   await expect(page.getByText('New Container')).toBeHidden();
-  // 拖动系统节点
+  // 拖动系统节点（拖图标）
   const sysNode = page.locator('.react-flow__node-c4').first();
-  const before = await sysNode.boundingBox();
+  const sysIcon = sysNode.locator('.c4-neon-icon');
+  const before = await sysIcon.boundingBox();
   const cx = before.x + before.width / 2;
   const cy = before.y + before.height / 2;
   await page.mouse.move(cx, cy);
@@ -111,7 +113,7 @@ test('拖动父元素后展开，子元素跟随父元素（仍在父框内）',
   await page.locator('.c4-toggle').first().click();
   await page.waitForTimeout(600);
   const system = page.locator('.c4-boundary').first();
-  const child = page.locator('.c4-node').first();
+  const child = page.locator('.c4-neon').first();
   await expect(system).toBeVisible();
   await expect(child).toBeVisible();
   const b = (await system.boundingBox())!;
@@ -206,9 +208,9 @@ test('拖拽连线方向：起点→终点，箭头不反向', async ({ page, re
   const ab = (await a.boundingBox())!;
   const bb = (await b.boundingBox())!;
   // 用「框体自由连线」：抓 A 框体空白拖到 B 框体空白 → 应生成 A→B
-  await page.mouse.move(ab.x + ab.width * 0.12, ab.y + ab.height * 0.5);
+  await page.mouse.move(ab.x + ab.width * 0.7, ab.y + ab.height * 0.5);
   await page.mouse.down();
-  await page.mouse.move(bb.x + bb.width * 0.12, bb.y + bb.height * 0.5, { steps: 20 });
+  await page.mouse.move(bb.x + bb.width * 0.7, bb.y + bb.height * 0.5, { steps: 20 });
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -332,8 +334,8 @@ test('画布搜索：非匹配元素淡化', async ({ page, request }) => {
   const search = page.getByPlaceholder(/搜索元素/);
   await search.fill('Order');
   await page.waitForTimeout(500);
-  const orderOpacity = await page.locator('.react-flow__node', { hasText: 'OrderSys' }).first().locator('.c4-node').evaluate((el) => getComputedStyle(el).opacity);
-  const payOpacity = await page.locator('.react-flow__node', { hasText: 'PaySys' }).first().locator('.c4-node').evaluate((el) => getComputedStyle(el).opacity);
+  const orderOpacity = await page.locator('.react-flow__node', { hasText: 'OrderSys' }).first().locator('.c4-neon').evaluate((el) => getComputedStyle(el).opacity);
+  const payOpacity = await page.locator('.react-flow__node', { hasText: 'PaySys' }).first().locator('.c4-neon').evaluate((el) => getComputedStyle(el).opacity);
   expect(Number(orderOpacity)).toBeGreaterThan(0.9);
   expect(Number(payOpacity)).toBeLessThan(0.5);
 });
@@ -572,9 +574,9 @@ test('框体自由连线：抓框体空白拖到另一框体', async ({ page, re
   const bb = (await b.boundingBox())!;
   const axBefore = ab.x;
   // 从 A 框体最左侧空白(居中文本左边的 padding) → 拖到 B 框体最左侧空白
-  await page.mouse.move(ab.x + ab.width * 0.12, ab.y + ab.height * 0.5);
+  await page.mouse.move(ab.x + ab.width * 0.7, ab.y + ab.height * 0.5);
   await page.mouse.down();
-  await page.mouse.move(bb.x + bb.width * 0.12, bb.y + bb.height * 0.5, { steps: 28 });
+  await page.mouse.move(bb.x + bb.width * 0.7, bb.y + bb.height * 0.5, { steps: 28 });
   await page.mouse.up();
   await page.waitForTimeout(900);
   const rels = (await (await request.get(`${base}/projects/${proj.id}/relationships`)).json()).data;

@@ -435,7 +435,7 @@ export default function ModelPage() {
   const [showUntraced, setShowUntraced] = useState(false);
   const [views, setViews] = useState<View[]>([]);
   const [currentViewId, setCurrentViewId] = useState<number | null>(null);
-  const [theme, setTheme] = useState<'light' | 'neon'>('light');
+  const [theme] = useState<'light' | 'neon'>('neon');
 
   // 未追溯需求：没有「需求→元素」追溯链接的需求
   const untracedReqs = useMemo(() => {
@@ -592,7 +592,6 @@ export default function ModelPage() {
               <button className="ghost sm" onClick={() => setExpanded(new Set())}>全部收起</button>
               <button className={`ghost sm ${showTree ? 'active' : ''}`} onClick={() => setShowTree(!showTree)}>元素结构</button>
               <button className={`ghost sm ${showLegend ? 'active' : ''}`} onClick={() => setShowLegend(!showLegend)}>图例</button>
-              <button className={`ghost sm ${theme === 'neon' ? 'active' : ''}`} onClick={() => setTheme((t) => (t === 'neon' ? 'light' : 'neon'))}>霓虹</button>
               <button className={`ghost sm ${showValidation ? 'active' : ''}`} onClick={() => setShowValidation(!showValidation)}>校验 ({validation.length})</button>
               <button className={`ghost sm ${showUntraced ? 'active' : ''}`} onClick={() => setShowUntraced(!showUntraced)}>未追溯 ({untracedReqs.length})</button>
               <button className="ghost sm" disabled={!clipboard} onClick={() => pasteAsRoot()}>粘贴</button>

@@ -104,7 +104,7 @@ function anchorStyle(side: Position, frac: number, color: string): CSSProperties
 }
 
 // 自定义边：把连接线上的多条消息渲染成逐条堆叠的标签
-type MsgEdgeData = { relationshipId?: number; messageLabels?: string[]; neon?: boolean; sourceColor?: string; targetColor?: string; curvature?: number };
+type MsgEdgeData = { relationshipId?: number; messageLabels?: string[]; neon?: boolean; sourceColor?: string; targetColor?: string; curvature?: number; solid?: boolean; solidColor?: string };
 type MsgEdgeType = Edge<MsgEdgeData, 'messageEdge'>;
 
 function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, data }: EdgeProps<MsgEdgeType>) {
@@ -119,17 +119,19 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
           <path
             d={path}
             fill="none"
-            stroke={`url(#${id}-grad)`}
+            stroke={data?.solid ? data?.solidColor : `url(#${id}-grad)`}
             strokeWidth={2.2}
             strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 3px ${data?.sourceColor || '#888'})` }}
+            style={{ filter: `drop-shadow(0 0 3px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` }}
           />
-          <defs>
-            <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={data?.sourceColor || '#888'} />
-              <stop offset="100%" stopColor={data?.targetColor || '#888'} />
-            </linearGradient>
-          </defs>
+          {!data?.solid && (
+            <defs>
+              <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={data?.sourceColor || '#888'} />
+                <stop offset="100%" stopColor={data?.targetColor || '#888'} />
+              </linearGradient>
+            </defs>
+          )}
         </>
       ) : (
         <BaseEdge path={path} style={style} markerEnd={markerEnd} />
@@ -583,7 +585,7 @@ export default function C4Canvas({
         targetHandle: `t-${d.id}`,
         sourcePosition: hp?.sp,
         targetPosition: hp?.tp,
-        data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature },
+        data: { relationshipId: d.relationshipId, messageLabels: tags, neon: isNeon, sourceColor: srcMeta?.color || baseColor, targetColor: tgtMeta?.color || baseColor, curvature, solid: d.missing || inCycle || linked, solidColor: baseColor },
         animated: linked,
         markerEnd: { type: MarkerType.ArrowClosed, color: baseColor, width: 18, height: 18 },
         style: {
