@@ -138,6 +138,10 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
             markerEnd={`url(#${id}-arr)`}
             style={{ filter: active ? `drop-shadow(0 0 6px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` : `drop-shadow(0 0 2px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'}66)` }}
           />
+          {/* 数据流小光点：沿曲线从源→目标流动 */}
+          <circle r={active ? 4 : 2.6} fill={data?.solid ? data?.solidColor : data?.targetColor || '#9be7ff'} style={{ filter: `drop-shadow(0 0 5px ${data?.solid ? data?.solidColor : data?.targetColor || '#9be7ff'})` }}>
+            <animateMotion dur="2.2s" repeatCount="indefinite" rotate="auto" path={path} />
+          </circle>
           <path d={path} fill="none" stroke="transparent" strokeWidth={20} style={{ pointerEvents: 'stroke' }} />
         </>
       ) : (
