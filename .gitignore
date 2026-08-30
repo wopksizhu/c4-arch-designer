@@ -25,3 +25,5 @@ web/test-results/
 # 凭据（绝不可提交）
 .git-credentials
 .creds/
+# 布局截图合集（测试生成物，不入库）
+web/e2e/gallery/
