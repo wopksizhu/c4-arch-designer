@@ -38,6 +38,8 @@ func createProject(r *ghttp.Request) {
 		fail(r, 500, err.Error())
 		return
 	}
+	// 为新建项目自动创建「主视图」
+	_, _ = store.CreateView(r.Context(), &model.View{ProjectId: id, Name: "主视图", Payload: "[]", IsDefault: true})
 	got, _ := store.GetProject(r.Context(), id)
 	ok(r, got)
 }
@@ -147,6 +149,9 @@ func updateElement(r *ghttp.Request) {
 	}
 	if v, ok := body["technology"]; ok {
 		add("technology", gconv.String(v))
+	}
+	if v, ok := body["category"]; ok {
+		add("category", gconv.String(v))
 	}
 	if v, ok := body["tags"]; ok {
 		add("tags", gconv.String(v))
@@ -259,6 +264,23 @@ func updateRelationship(r *ghttp.Request) {
 	if v, ok := body["level"]; ok {
 		add("level", gconv.Int(v))
 	}
+	if v, ok := body["sourceContainerId"]; ok {
+		if v == nil {
+			sets = append(sets, "source_container_id=NULL")
+		} else {
+			add("source_container_id", gconv.Int64(v))
+		}
+	}
+	if v, ok := body["targetContainerId"]; ok {
+		if v == nil {
+			sets = append(sets, "target_container_id=NULL")
+		} else {
+			add("target_container_id", gconv.Int64(v))
+		}
+	}
+	if v, ok := body["messages"]; ok {
+		add("messages", gconv.String(v))
+	}
 	if len(sets) == 0 {
 		got, _ := store.GetRelationship(r.Context(), id)
 		ok(r, got)
@@ -278,6 +300,97 @@ func updateRelationship(r *ghttp.Request) {
 func deleteRelationship(r *ghttp.Request) {
 	id := idOf(r, "id")
 	if err := store.DeleteRelationship(r.Context(), id); err != nil {
+		fail(r, 500, err.Error())
+		return
+	}
+	ok(r, nil)
+}
+
+// ---- View（画布视图/位置快照） ----
+
+func listViews(r *ghttp.Request) {
+	pid := idOf(r, "id")
+	_, _ = store.EnsureDefaultView(r.Context(), pid)
+	list, err := store.ListViews(r.Context(), pid)
+	if err != nil {
+		fail(r, 500, err.Error())
+		return
+	}
+	ok(r, list)
+}
+
+func createView(r *ghttp.Request) {
+	pid := idOf(r, "id")
+	var v model.View
+	if err := r.Parse(&v); err != nil {
+		fail(r, 51, err.Error())
+		return
+	}
+	if err := store.RequireProject(r.Context(), pid); err != nil {
+		fail(r, 404, err.Error())
+		return
+	}
+	v.ProjectId = pid
+	if v.Name == "" {
+		v.Name = "视图"
+	}
+	if v.Payload == "" {
+		v.Payload = "[]"
+	}
+	id, err := store.CreateView(r.Context(), &v)
+	if err != nil {
+		fail(r, 500, err.Error())
+		return
+	}
+	got, _ := store.GetView(r.Context(), id)
+	ok(r, got)
+}
+
+func getView(r *ghttp.Request) {
+	id := idOf(r, "vid")
+	v, err := store.GetView(r.Context(), id)
+	if err != nil {
+		fail(r, 500, err.Error())
+		return
+	}
+	if v == nil {
+		fail(r, 404, "视图不存在")
+		return
+	}
+	ok(r, v)
+}
+
+func updateView(r *ghttp.Request) {
+	id := idOf(r, "vid")
+	cur, err := store.GetView(r.Context(), id)
+	if err != nil {
+		fail(r, 500, err.Error())
+		return
+	}
+	if cur == nil {
+		fail(r, 404, "视图不存在")
+		return
+	}
+	var body map[string]interface{}
+	if err := r.Parse(&body); err == nil {
+		if name, okName := body["name"].(string); okName && name != "" {
+			cur.Name = name
+		}
+		if payload, okPayload := body["payload"].(string); okPayload {
+			cur.Payload = payload
+		}
+	}
+	if err := store.UpdateView(r.Context(), cur); err != nil {
+		fail(r, 500, err.Error())
+		return
+	}
+	got, _ := store.GetView(r.Context(), id)
+	ok(r, got)
+}
+
+func deleteView(r *ghttp.Request) {
+	id := idOf(r, "vid")
+	if err := store.DeleteView(r.Context(), id); err != nil {
 		fail(r, 500, err.Error())
 		return
 	}

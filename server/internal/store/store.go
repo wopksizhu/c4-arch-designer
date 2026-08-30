@@ -77,12 +77,85 @@ func DeleteProject(ctx context.Context, id int64) error {
 		"DELETE FROM prototypes WHERE project_id=?",
 		"DELETE FROM trace_links WHERE project_id=?",
 		"DELETE FROM ai_suggestions WHERE project_id=?",
+		"DELETE FROM views WHERE project_id=?",
 	} {
 		if _, err := g.DB().Exec(ctx, sql, id); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ---- View ----
+
+func ListViews(ctx context.Context, projectId int64) ([]model.View, error) {
+	res, err := g.DB().GetAll(ctx, "SELECT * FROM views WHERE project_id=? ORDER BY is_default DESC, id ASC", projectId)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.View
+	if err := res.Structs(&out); err != nil {
+		return nil, err
+	}
+	return nn(out), nil
+}
+
+func GetView(ctx context.Context, id int64) (*model.View, error) {
+	rec, err := g.DB().GetOne(ctx, "SELECT * FROM views WHERE id=?", id)
+	if err != nil {
+		return nil, err
+	}
+	if rec.IsEmpty() {
+		return nil, nil
+	}
+	var v model.View
+	if err := rec.Struct(&v); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func CreateView(ctx context.Context, v *model.View) (int64, error) {
+	res, err := g.DB().Exec(ctx, "INSERT INTO views(project_id, name, payload, is_default) VALUES(?, ?, ?, ?)",
+		v.ProjectId, v.Name, v.Payload, boolToInt(v.IsDefault))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func UpdateView(ctx context.Context, v *model.View) error {
+	_, err := g.DB().Exec(ctx, "UPDATE views SET name=?, payload=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+		v.Name, v.Payload, v.Id)
+	return err
+}
+
+func DeleteView(ctx context.Context, id int64) error {
+	_, err := g.DB().Exec(ctx, "DELETE FROM views WHERE id=?", id)
+	return err
+}
+
+// 确保某项目至少有一个「主视图」，返回其 id
+func EnsureDefaultView(ctx context.Context, projectId int64) (int64, error) {
+	list, err := ListViews(ctx, projectId)
+	if err != nil {
+		return 0, err
+	}
+	if len(list) > 0 {
+		return list[0].Id, nil
+	}
+	id, err := CreateView(ctx, &model.View{ProjectId: projectId, Name: "主视图", Payload: "[]", IsDefault: true})
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ---- Element ----
@@ -115,9 +188,9 @@ func GetElement(ctx context.Context, id int64) (*model.Element, error) {
 }
 
 func CreateElement(ctx context.Context, e *model.Element) (int64, error) {
-	res, err := g.DB().Exec(ctx, `INSERT INTO elements(project_id, level, type, name, description, technology, tags, parent_id, pos_x, pos_y)
-		VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		e.ProjectId, e.Level, e.Type, e.Name, e.Description, e.Technology, e.Tags, e.ParentId, e.PosX, e.PosY)
+	res, err := g.DB().Exec(ctx, `INSERT INTO elements(project_id, level, type, name, description, technology, tags, category, parent_id, pos_x, pos_y)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		e.ProjectId, e.Level, e.Type, e.Name, e.Description, e.Technology, e.Tags, e.Category, e.ParentId, e.PosX, e.PosY)
 	if err != nil {
 		return 0, err
 	}
@@ -125,8 +198,8 @@ func CreateElement(ctx context.Context, e *model.Element) (int64, error) {
 }
 
 func UpdateElement(ctx context.Context, e *model.Element) error {
-	_, err := g.DB().Exec(ctx, `UPDATE elements SET level=?, type=?, name=?, description=?, technology=?, tags=?, parent_id=?, pos_x=?, pos_y=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		e.Level, e.Type, e.Name, e.Description, e.Technology, e.Tags, e.ParentId, e.PosX, e.PosY, e.Id)
+	_, err := g.DB().Exec(ctx, `UPDATE elements SET level=?, type=?, name=?, description=?, technology=?, tags=?, category=?, parent_id=?, pos_x=?, pos_y=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		e.Level, e.Type, e.Name, e.Description, e.Technology, e.Tags, e.Category, e.ParentId, e.PosX, e.PosY, e.Id)
 	return err
 }
 
@@ -220,8 +293,8 @@ func GetRelationship(ctx context.Context, id int64) (*model.Relationship, error)
 }
 
 func CreateRelationship(ctx context.Context, r *model.Relationship) (int64, error) {
-	res, err := g.DB().Exec(ctx, `INSERT INTO relationships(project_id, source_id, target_id, label, interaction, protocol, description, technology, level) VALUES(?,?,?,?,?,?,?,?,?)`,
-		r.ProjectId, r.SourceId, r.TargetId, r.Label, r.Interaction, r.Protocol, r.Description, r.Technology, r.Level)
+	res, err := g.DB().Exec(ctx, `INSERT INTO relationships(project_id, source_id, target_id, label, interaction, protocol, description, technology, level, source_container_id, target_container_id, messages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ProjectId, r.SourceId, r.TargetId, r.Label, r.Interaction, r.Protocol, r.Description, r.Technology, r.Level, r.SourceContainerId, r.TargetContainerId, r.Messages)
 	if err != nil {
 		return 0, err
 	}
@@ -229,8 +302,8 @@ func CreateRelationship(ctx context.Context, r *model.Relationship) (int64, erro
 }
 
 func UpdateRelationship(ctx context.Context, r *model.Relationship) error {
-	_, err := g.DB().Exec(ctx, `UPDATE relationships SET source_id=?, target_id=?, label=?, interaction=?, protocol=?, description=?, technology=?, level=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		r.SourceId, r.TargetId, r.Label, r.Interaction, r.Protocol, r.Description, r.Technology, r.Level, r.Id)
+	_, err := g.DB().Exec(ctx, `UPDATE relationships SET source_id=?, target_id=?, label=?, interaction=?, protocol=?, description=?, technology=?, level=?, source_container_id=?, target_container_id=?, messages=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		r.SourceId, r.TargetId, r.Label, r.Interaction, r.Protocol, r.Description, r.Technology, r.Level, r.SourceContainerId, r.TargetContainerId, r.Messages, r.Id)
 	return err
 }
 

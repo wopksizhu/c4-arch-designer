@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS elements (
 	description TEXT NOT NULL DEFAULT '',
 	technology TEXT NOT NULL DEFAULT '',
 	tags TEXT NOT NULL DEFAULT '',
+	category TEXT NOT NULL DEFAULT '',
 	parent_id INTEGER,
 	pos_x REAL NOT NULL DEFAULT 0,
 	pos_y REAL NOT NULL DEFAULT 0,
@@ -46,6 +47,9 @@ CREATE TABLE IF NOT EXISTS relationships (
 	description TEXT NOT NULL DEFAULT '',
 	technology TEXT NOT NULL DEFAULT '',
 	level INTEGER NOT NULL DEFAULT 1,
+	source_container_id INTEGER,
+	target_container_id INTEGER,
+	messages TEXT NOT NULL DEFAULT '[]',
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -95,6 +99,16 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS views (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	project_id INTEGER NOT NULL,
+	name TEXT NOT NULL,
+	payload TEXT NOT NULL DEFAULT '[]',
+	is_default INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_elem_project ON elements(project_id);
 CREATE INDEX IF NOT EXISTS idx_rel_project ON relationships(project_id);
 CREATE INDEX IF NOT EXISTS idx_req_project ON requirements(project_id);
@@ -122,6 +136,10 @@ func Init(ctx context.Context) error {
 	for _, alter := range []string{
 		"ALTER TABLE relationships ADD COLUMN interaction TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE relationships ADD COLUMN protocol TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE relationships ADD COLUMN source_container_id INTEGER",
+		"ALTER TABLE relationships ADD COLUMN target_container_id INTEGER",
+		"ALTER TABLE relationships ADD COLUMN messages TEXT NOT NULL DEFAULT '[]'",
+		"ALTER TABLE elements ADD COLUMN category TEXT NOT NULL DEFAULT ''",
 	} {
 		_, _ = db.Exec(ctx, alter)
 	}

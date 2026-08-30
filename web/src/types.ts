@@ -17,11 +17,19 @@ export interface Element {
   description: string;
   technology: string;
   tags: string;
+  category?: string; // 细分类别：database/queue/cache/frontend/backend/mobile/external/user...
   parentId: number | null;
   posX: number;
   posY: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RelationshipMessage {
+  name: string;
+  protocol: string;
+  senderId?: number | null;
+  receiverId?: number | null;
 }
 
 export interface Relationship {
@@ -35,6 +43,9 @@ export interface Relationship {
   description: string;
   technology: string;
   level: number;
+  sourceContainerId?: number | null;
+  targetContainerId?: number | null;
+  messages?: string; // JSON 数组字符串
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +84,16 @@ export interface TraceLink {
   toId: number;
   linkType: string;
   createdAt: string;
+}
+
+export interface View {
+  id: number;
+  projectId: number;
+  name: string;
+  payload: string; // JSON: [{"elemId":1,"x":0,"y":0}, ...]
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TraceMatrixRow {

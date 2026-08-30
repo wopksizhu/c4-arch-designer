@@ -33,6 +33,7 @@ type Element struct {
 	Description string  `json:"description"`
 	Technology  string  `json:"technology"`
 	Tags        string  `json:"tags"`
+	Category    string  `json:"category"` // 细分类别：database/queue/cache/frontend/backend/mobile/external/user...
 	ParentId    *int64  `json:"parentId,omitempty"`
 	PosX        float64 `json:"posX"`
 	PosY        float64 `json:"posY"`
@@ -41,18 +42,22 @@ type Element struct {
 }
 
 type Relationship struct {
-	Id          int64     `json:"id"`
-	ProjectId   int64     `json:"projectId"`
-	SourceId    int64     `json:"sourceId"`
-	TargetId    int64     `json:"targetId"`
-	Label       string    `json:"label"`
-	Interaction string    `json:"interaction"` // 交互内容，如“下单”
-	Protocol    string    `json:"protocol"`    // 通信协议，如 REST/HTTP, MQ
-	Description string    `json:"description"`
-	Technology  string    `json:"technology"`
-	Level       int       `json:"level"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	Id                int64     `json:"id"`
+	ProjectId         int64     `json:"projectId"`
+	SourceId          int64     `json:"sourceId"`
+	TargetId          int64     `json:"targetId"`
+	Label             string    `json:"label"`
+	Interaction       string    `json:"interaction"` // 交互内容，如“下单”
+	Protocol          string    `json:"protocol"`    // 通信协议，如 REST/HTTP, MQ
+	Description       string    `json:"description"`
+	Technology        string    `json:"technology"`
+	Level             int       `json:"level"`
+	SourceContainerId *int64    `json:"sourceContainerId,omitempty"` // 源系统展开后，消息由该系统内哪个容器发出
+	TargetContainerId *int64    `json:"targetContainerId,omitempty"` // 目标系统展开后，消息落到该系统内哪个容器
+	// 消息列表（JSON 字符串，形如 [{"name":"..","protocol":"..","senderId":null,"receiverId":null}]）
+	Messages  string    `json:"messages"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type Requirement struct {
@@ -89,6 +94,17 @@ type TraceLink struct {
 	ToId      int64     `json:"toId"`
 	LinkType  string    `json:"linkType"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+// View 画布视图：同一模型的命名布局快照（元素位置）。主视图 isDefault=1 向后兼容。
+type View struct {
+	Id        int64     `json:"id"`
+	ProjectId int64     `json:"projectId"`
+	Name      string    `json:"name"`
+	Payload   string    `json:"payload"` // JSON: [{"elemId":1,"x":0,"y":0}, ...]
+	IsDefault bool      `json:"isDefault"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ---- 追溯矩阵与影响分析 ----

@@ -16,3 +16,9 @@ server/archlens.exe
 *.log
 .DS_Store
 Thumbs.db
+# 构建/测试产物（不入库）
+archlens.exe~
+web/playwright-report/
+web/test-results/
+*.exe~
+*.tmp

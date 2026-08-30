@@ -26,6 +26,9 @@ func Register(s *ghttp.Server) {
 			p.GET("/{id}/tracelinks", listTraceLinks)
 			p.POST("/{id}/tracelinks", createTraceLink)
 
+			p.GET("/{id}/views", listViews)
+			p.POST("/{id}/views", createView)
+
 			p.GET("/{id}/matrix", traceMatrix)
 			p.GET("/{id}/impact", impactAnalysis)
 			p.GET("/{id}/export", exportProject)
@@ -50,5 +53,8 @@ func Register(s *ghttp.Server) {
 		group.DELETE("/prototypes/{id}", deletePrototype)
 		group.PUT("/prototypes/{id}", updatePrototype)
 		group.DELETE("/tracelinks/{id}", deleteTraceLink)
+		group.GET("/views/{vid}", getView)
+		group.PUT("/views/{vid}", updateView)
+		group.DELETE("/views/{vid}", deleteView)
 	})
 }

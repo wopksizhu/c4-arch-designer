@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as api from '../api';
 import C4Canvas from '../components/C4Canvas';
 import ElementTree from '../components/ElementTree';
+import ComboInput from '../components/ComboInput';
+import { minimalLayout, NODE_H, CHILD_MIN_X, CHILD_MIN_Y } from '../lib/geometry';
+import { graphLayout } from '../lib/layout';
+import { parseMessages, buildEdges } from '../lib/edges';
+import { detectCycles } from '../lib/cycles';
+import type { PaletteItem } from '../lib/palette';
+import { INTERACTION_PRESETS, PROTOCOL_PRESETS, TECH_PRESETS, categoryForTech } from '../lib/presets';
+import { CATEGORY_LIST } from '../lib/visual';
+import { TEMPLATES, type Template } from '../lib/templates';
 import type {
   AiDraft,
   Element,
@@ -11,9 +20,11 @@ import type {
   Project,
   Prototype,
   Relationship,
+  RelationshipMessage,
   Requirement,
   TraceLink,
   TraceMatrixRow,
+  View,
 } from '../types';
 
 const LEVEL_NAME: Record<number, string> = { 1: 'Context', 2: 'Container', 3: 'Component' };
@@ -30,34 +41,32 @@ const TYPE_LABEL: Record<string, string> = {
 };
 const prioLabel = (p: string) => (p === 'high' ? '高' : p === 'low' ? '低' : '中');
 
-// 简单分层自动布局：根元素网格；每个父级展开后，其子元素在父级下方网格排列
-function layoutModel(elements: Element[]): Map<number, { x: number; y: number }> {
-  const byParent = new Map<number, Element[]>();
-  const roots: Element[] = [];
-  elements.forEach((e) => {
-    if (e.parentId == null) roots.push(e);
-    else {
-      const arr = byParent.get(e.parentId) || [];
-      arr.push(e);
-      byParent.set(e.parentId, arr);
-    }
-  });
-  const pos = new Map<number, { x: number; y: number }>();
-  const layout = (ids: Element[], x0: number, y0: number) => {
-    const n = ids.length;
-    const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
-    ids.forEach((e, i) => {
-      const x = x0 + (i % cols) * 300;
-      const y = y0 + Math.floor(i / cols) * 200;
-      pos.set(e.id, { x, y });
-      const kids = byParent.get(e.id);
-      if (kids && kids.length) layout(kids, x, y + 220);
+// 收集某元素的全部后代 id（递归），用于父元素拖动时整体平移子元素
+function collectDescendants(elements: Element[], id: number): number[] {
+  const out: number[] = [];
+  const stack = [id];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    elements.forEach((e) => {
+      if (e.parentId === cur) {
+        out.push(e.id);
+        stack.push(e.id);
+      }
     });
-  };
-  layout(roots, 0, 0);
-  return pos;
+  }
+  return out;
 }
 
+// 复制/粘贴剪贴板：一棵子树（含内部关系），用「相对索引」表示父级与关系端点
+interface CopyBundle {
+  rootId: number;
+  parentId: number | null;
+  elements: Array<{
+    name: string; type: string; level: number; category?: string; technology: string; description: string; tags: string;
+    parentRef: number | null; posX: number; posY: number;
+  }>;
+  relationships: Array<{ sourceRef: number; targetRef: number; label: string; interaction: string; protocol: string; messages: string; sourceContainerId?: number | null; targetContainerId?: number | null }>;
+}
 export default function ModelPage() {
   const { id } = useParams();
   const pid = Number(id);
@@ -74,13 +83,14 @@ export default function ModelPage() {
 
   const reload = useCallback(async () => {
     try {
-      const [p, es, rs, qs, ps, ts] = await Promise.all([
+      const [p, es, rs, qs, ps, ts, vs] = await Promise.all([
         api.listProjects().then((ps) => ps.find((x) => x.id === pid) || null),
         api.listElements(pid),
         api.listRelationships(pid),
         api.listRequirements(pid),
         api.listPrototypes(pid),
         api.listTraceLinks(pid),
+        api.listViews(pid),
       ]);
       setProject(p);
       setElements(es);
@@ -88,6 +98,12 @@ export default function ModelPage() {
       setRequirements(qs);
       setPrototypes(ps);
       setTraceLinks(ts);
+      setViews(vs);
+      // 默认切到「主视图」（isDefault 或第一个）
+      setCurrentViewId((cur) => {
+        if (cur != null && vs.some((v) => v.id === cur)) return cur;
+        return vs.find((v) => v.isDefault)?.id ?? vs[0]?.id ?? null;
+      });
     } catch (e: any) {
       setErr(e.message);
     }
@@ -97,51 +113,62 @@ export default function ModelPage() {
     reload();
   }, [reload]);
 
-  // 一张大图 + 元素块可展开/折叠：可见元素 = 根元素 + 所有“展开”父级的后代（递归）
-  const applyLayout = async (only?: number[]) => {
-    const pos = layoutModel(elements);
-    let targets = pos;
-    if (only) {
-      const s = new Set(only);
-      targets = new Map([...pos].filter(([id]) => s.has(id)));
+  // 自动布局：分层(Sugiyama)算法，按连线关系排层、层内重心排序减少交叉，处理父子包含
+  const applyLayout = async (dir?: 'down' | 'right') => {
+    const d = dir ?? layoutDir;
+    const before = snapPos();
+    const pos = graphLayout(elements, relationships, visibleIdsFor(expanded), expanded, d);
+    if (pos.size === 0) return;
+    await Promise.all([...pos.entries()].map(([id, p]) => api.updateElement(id, { posX: p.x, posY: p.y })));
+    setElements((prev) => prev.map((e) => (pos.has(e.id) ? { ...e, posX: pos.get(e.id)!.x, posY: pos.get(e.id)!.y } : e)));
+    const after = snapPos();
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      pushHistory({ undo: () => restorePos(before), redo: () => restorePos(after) });
     }
-    await Promise.all([...targets.entries()].map(([id, p]) => api.updateElement(id, { posX: p.x, posY: p.y })));
     reload();
   };
 
+  // 可见元素 = 根元素 + 所有“展开”父级的后代（递归）
+  const visibleIdsFor = useCallback(
+    (expSet: Set<number>): Set<number> => {
+      const byParent = new Map<number, Element[]>();
+      const roots: Element[] = [];
+      elements.forEach((e) => {
+        if (e.parentId == null) roots.push(e);
+        else {
+          const arr = byParent.get(e.parentId) || [];
+          arr.push(e);
+          byParent.set(e.parentId, arr);
+        }
+      });
+      const out = new Set<number>();
+      const walk = (ids: Element[]) =>
+        ids.forEach((e) => {
+          out.add(e.id);
+          if (expSet.has(e.id)) walk(byParent.get(e.id) || []);
+        });
+      walk(roots);
+      return out;
+    },
+    [elements],
+  );
+
+  // 泳道分组已移除（后期做自定义分组）——保持最小化布局为展示层覆盖
+  const displayPos = useMemo(() => minimalLayout(elements, visibleIdsFor(expanded), expanded), [elements, visibleIdsFor, expanded]);
+
   const expand = (id: number) => {
-    setExpanded((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-    // 展开/收起后自动重新布局，让框内子元素整齐排列
-    setTimeout(() => applyLayout(), 0);
+    const n = new Set(expanded);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    setExpanded(n);
   };
 
   const hasChildren = useCallback((id: number) => elements.some((e) => e.parentId === id), [elements]);
 
-  const visibleElements = useMemo(() => {
-    const byParent = new Map<number, Element[]>();
-    const roots: Element[] = [];
-    elements.forEach((e) => {
-      if (e.parentId == null) roots.push(e);
-      else {
-        const arr = byParent.get(e.parentId) || [];
-        arr.push(e);
-        byParent.set(e.parentId, arr);
-      }
-    });
-    const out: Element[] = [];
-    const walk = (ids: Element[]) =>
-      ids.forEach((e) => {
-        out.push(e);
-        if (expanded.has(e.id)) walk(byParent.get(e.id) || []);
-      });
-    walk(roots);
-    return out;
-  }, [elements, expanded]);
+  const visibleElements = useMemo(
+    () => elements.filter((e) => visibleIdsFor(expanded).has(e.id)),
+    [elements, visibleIdsFor, expanded],
+  );
 
   const contextIds = useMemo(() => new Set<number>(expanded), [expanded]);
   const viewLevel = 1; // 顶栏添加为根层级
@@ -152,21 +179,81 @@ export default function ModelPage() {
     [relationships, visibleIds],
   );
 
-  async function addElement(type: string, parentId?: number | null) {
+  // 校验：用 buildEdges 找出「缺失(红)」的消息（系统级消息未落到叶子）
+  const validation = useMemo(() => {
+    const drafts = buildEdges(relationships, elements, visibleIds, expanded);
+    return drafts
+      .filter((d) => d.missing)
+      .map((d) => {
+        const s = elements.find((e) => e.id === d.sourceId);
+        const t = elements.find((e) => e.id === d.targetId);
+        return {
+          relationshipId: d.relationshipId,
+          label: d.label.split('\n')[0] || 'uses',
+          sName: s?.name ?? '?',
+          tName: t?.name ?? '?',
+          missing: d.missing,
+        };
+      });
+  }, [relationships, elements, visibleIds, expanded]);
+
+  // 循环依赖检测（Tarjan SCC）——用于校验面板与画布高亮
+  const cycleInfo = useMemo(() => detectCycles(elements, relationships), [elements, relationships]);
+
+  async function addElement(type: string, parentId?: number | null, extra?: { category?: string; technology?: string; name?: string; posX?: number; posY?: number }) {
     const parent = parentId != null ? elements.find((e) => e.id === parentId) : null;
     const siblings = elements.filter((e) => e.parentId === parentId);
-    const e = await api.createElement(pid, {
+    // 子元素默认放在父框内（最小内缩处）向下错开；若给了鼠标处坐标，则放在鼠标处并钳制在父框内
+    let posX = parent ? parent.posX + CHILD_MIN_X : 200 + elements.length * 20;
+    let posY = parent ? parent.posY + CHILD_MIN_Y + siblings.length * (NODE_H + 60) : 200 + elements.length * 20;
+    if (extra?.posX != null) posX = extra.posX;
+    if (extra?.posY != null) posY = extra.posY;
+    if (parent) {
+      posX = Math.max(posX, parent.posX + CHILD_MIN_X);
+      posY = Math.max(posY, parent.posY + CHILD_MIN_Y);
+    }
+    const payload = {
       level: parent ? parent.level + 1 : 1,
       type: type as ElementType,
-      name: 'New ' + TYPE_LABEL[type],
+      name: extra?.name || 'New ' + TYPE_LABEL[type],
+      category: extra?.category ?? '',
+      technology: extra?.technology ?? '',
       parentId: parentId ?? null,
-      // 子元素默认放在父元素正下方，避免与父元素重叠（后续自动布局再细化）
-      posX: parent ? parent.posX : 200 + elements.length * 20,
-      posY: parent ? parent.posY + 200 + siblings.length * 160 : 200 + elements.length * 20,
-    });
+      posX,
+      posY,
+    };
+    const e = await api.createElement(pid, payload);
     setElements((prev) => [...prev, e]);
     if (parentId != null) setExpanded((prev) => new Set(prev).add(parentId));
+    // 撤销=删除新增；重做=重建
+    pushHistory({ undo: async () => { await api.deleteElement(e.id); setElements((prev) => prev.filter((x) => x.id !== e.id)); }, redo: async () => { const ne = await api.createElement(pid, payload); setElements((prev) => [...prev, ne]); } });
     return e;
+  }
+
+  // 按「分类画板」条目创建子元素（带类别+技术栈+名称；pos 为右键处画布坐标，缺省用默认）
+  async function addElementCategorized(parentId: number, item: PaletteItem, pos?: { x: number; y: number } | null) {
+    const parent = elements.find((e) => e.id === parentId);
+    if (!parent) return;
+    await addElement(item.type as ElementType, parentId, { category: item.category, technology: item.tech, name: item.name, posX: pos?.x, posY: pos?.y });
+  }
+
+  // 一键生成常用系统模板
+  async function applyTemplate(t: Template) {
+    const sys = await api.createElement(pid, { level: 1, type: 'softwareSystem', name: t.name, category: t.category, technology: t.tech, parentId: null, posX: 360, posY: 200 });
+    setElements((prev) => [...prev, sys]);
+    let i = 0;
+    for (const c of t.containers) {
+      const e = await api.createElement(pid, {
+        level: 2, type: 'container', name: c.name, category: c.category, technology: c.tech, parentId: sys.id,
+        posX: sys.posX + CHILD_MIN_X + (i % 2) * 180,
+        posY: sys.posY + CHILD_MIN_Y + Math.floor(i / 2) * 170,
+      });
+      setElements((prev) => [...prev, e]);
+      i++;
+    }
+    setExpanded((prev) => new Set(prev).add(sys.id));
+    setShowTemplates(false);
+    showToast(`已生成「${t.name}」`);
   }
 
   // 为某元素添加子元素（类型由父级决定：System→Container，Container→Component）
@@ -177,31 +264,268 @@ export default function ModelPage() {
     await addElement(t, parentId);
   }
 
-  async function addEdge(sourceId: number, targetId: number) {
-    const r = await api.createRelationship(pid, {
-      sourceId,
-      targetId,
-      label: 'uses',
-      level: viewLevel,
+  // 复制某元素及其整棵子树（含内部关系）到剪贴板
+  // 构建某元素整棵子树的「可重建」数据（含内部关系），用于复制/删除撤销
+  function buildBundle(rootId: number) {
+    const ids = [rootId, ...collectDescendants(elements, rootId)];
+    const idSet = new Set(ids);
+    const idToIdx = new Map<number, number>();
+    ids.forEach((id, i) => idToIdx.set(id, i));
+    const bundleElems = ids.map((id) => {
+      const e = elements.find((x) => x.id === id)!;
+      return {
+        name: e.name, type: e.type, level: e.level, category: e.category ?? '', technology: e.technology,
+        description: e.description, tags: e.tags,
+        parentRef: e.parentId != null && idToIdx.has(e.parentId) ? idToIdx.get(e.parentId)! : null,
+        posX: e.posX, posY: e.posY,
+      };
     });
+    const bundleRels = relationships
+      .filter((r) => idSet.has(r.sourceId) && idSet.has(r.targetId))
+      .map((r) => ({
+        sourceRef: idToIdx.get(r.sourceId)!, targetRef: idToIdx.get(r.targetId)!,
+        label: r.label, interaction: r.interaction, protocol: r.protocol, messages: r.messages,
+        sourceContainerId: r.sourceContainerId ?? null, targetContainerId: r.targetContainerId ?? null,
+      }));
+    const root = elements.find((e) => e.id === rootId);
+    return { rootId, parentId: root?.parentId ?? null, elements: bundleElems, relationships: bundleRels };
+  }
+
+  // 把剪贴板/删除暂存的子树真正创建出来（重做/粘贴共用），返回新根 id
+  async function materializeBundle(bundle: CopyBundle, rootParentId: number | null, offsetX: number, offsetY: number): Promise<number | null> {
+    const idMap = new Map<number, number>();
+    for (let i = 0; i < bundle.elements.length; i++) {
+      const c = bundle.elements[i];
+      const isRoot = i === 0;
+      const refParent = c.parentRef != null ? idMap.get(c.parentRef) ?? null : null;
+      const newParentId = isRoot ? rootParentId : refParent;
+      const e = await api.createElement(pid, {
+        level: c.level, type: c.type as ElementType, name: c.name, category: c.category,
+        technology: c.technology, description: c.description, tags: c.tags,
+        parentId: newParentId, posX: c.posX + offsetX, posY: c.posY + offsetY,
+      });
+      idMap.set(i, e.id);
+      setElements((prev) => [...prev, e]);
+    }
+    for (const r of bundle.relationships) {
+      const s = idMap.get(r.sourceRef);
+      const t = idMap.get(r.targetRef);
+      if (s && t) {
+        await api.createRelationship(pid, {
+          sourceId: s, targetId: t, label: r.label, interaction: r.interaction, protocol: r.protocol,
+          messages: r.messages, sourceContainerId: r.sourceContainerId ?? null, targetContainerId: r.targetContainerId ?? null,
+        });
+      }
+    }
+    return idMap.size ? idMap.get(0) ?? null : null;
+  }
+
+  function copySubtree(rootId: number) {
+    const bundle = buildBundle(rootId);
+    setClipboard(bundle);
+    showToast(`已复制 ${bundle.elements.length} 个元素`);
+  }
+
+  // 粘贴：作为根元素放置（整体偏移），或作为某节点子元素放置
+  async function pasteSubtree(parentId: number | null, offsetX: number, offsetY: number) {
+    if (!clipboard || !clipboard.elements.length) return;
+    await materializeBundle(clipboard, parentId, offsetX, offsetY);
+    if (parentId != null) setExpanded((prev) => new Set(prev).add(parentId));
+    showToast(`已粘贴 ${clipboard.elements.length} 个元素`);
+    reload();
+  }
+
+  // 粘贴为根（画布空白/顶栏）
+  const pasteAsRoot = () => pasteSubtree(null, 60, 60);
+  // 粘贴为某节点的子元素
+  const pasteAsChild = (parentId: number) => {
+    const parent = elements.find((e) => e.id === parentId);
+    if (!parent) return;
+    pasteSubtree(parentId, parent.posX + CHILD_MIN_X - (clipboard?.elements[0]?.posX ?? 0), parent.posY + CHILD_MIN_Y - (clipboard?.elements[0]?.posY ?? 0));
+  };
+
+  async function addEdge(sourceId: number, targetId: number) {
+    const payload = { sourceId, targetId, label: 'uses', level: viewLevel };
+    const r = await api.createRelationship(pid, payload);
     setRelationships((prev) => [...prev, r]);
+    // 撤销=删除新增关系；重做=重建
+    pushHistory({ undo: async () => { await api.deleteRelationship(r.id); setRelationships((prev) => prev.filter((x) => x.id !== r.id)); }, redo: async () => { const nr = await api.createRelationship(pid, payload); setRelationships((prev) => [...prev, nr]); } });
   }
 
   function moveElement(id: number, x: number, y: number) {
     setElements((prev) => prev.map((it) => (it.id === id ? { ...it, posX: x, posY: y } : it)));
   }
   async function commitElement(id: number, x: number, y: number) {
+    // 父元素拖动时，把它所有后代按同样的位移一并平移（否则展开后子元素落到框外）
+    const el = elements.find((e) => e.id === id);
+    const oldX = el ? el.posX : x;
+    const oldY = el ? el.posY : y;
+    const dx = x - oldX;
+    const dy = y - oldY;
     await api.updateElement(id, { posX: x, posY: y });
+    if ((dx || dy) && el) {
+      const desc = collectDescendants(elements, id);
+      if (desc.length) {
+        await Promise.all(
+          desc.map((did) => {
+            const d = elements.find((e) => e.id === did);
+            return d ? api.updateElement(did, { posX: d.posX + dx, posY: d.posY + dy }) : Promise.resolve();
+          }),
+        );
+        setElements((prev) =>
+          prev.map((it) => (desc.includes(it.id) ? { ...it, posX: it.posX + dx, posY: it.posY + dy } : it)),
+        );
+      }
+    }
+    // 记录移动：undo=恢复移动前位置，redo=恢复移动后位置（含后代）
+    if (posBeforeRef.current && (dx || dy)) {
+      const before = posBeforeRef.current;
+      posBeforeRef.current = null;
+      const after = snapPos();
+      pushHistory({ undo: () => restorePos(before), redo: () => restorePos(after) });
+    }
+  }
+
+  // 删除元素并进入撤销历史（右键菜单与属性面板共用）
+  async function deleteElementWithHistory(id: number) {
+    const bundle = buildBundle(id);
+    const rootParent = bundle.parentId;
+    await api.deleteElement(id);
+    setSelectedId(null);
+    reload();
+    showToast('已删除元素');
+    let restoredRootId: number | null = null;
+    pushHistory({
+      undo: async () => {
+        restoredRootId = await materializeBundle(bundle, rootParent, 0, 0);
+        reload();
+      },
+      redo: async () => {
+        if (restoredRootId != null) {
+          await api.deleteElement(restoredRootId);
+          const removedIds = new Set([restoredRootId, ...collectDescendants(elements, restoredRootId)]);
+          setElements((prev) => prev.filter((e) => !removedIds.has(e.id)));
+          reload();
+        }
+      },
+    });
   }
 
   const selectedElement = elements.find((e) => String(e.id) === selectedId) || null;
+  // 层级导航面包屑：根 → … → 选中元素
+  const breadcrumb = useMemo(() => {
+    const chain: Element[] = [];
+    let cur = selectedElement;
+    while (cur) {
+      chain.unshift(cur);
+      cur = cur.parentId != null ? elements.find((e) => e.id === cur.parentId) || null : null;
+    }
+    return chain;
+  }, [selectedElement, elements]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const selectedEdge = relationships.find((r) => String(r.id) === selectedEdgeId) || null;
   const [view, setView] = useState('canvas');
   const [showTree, setShowTree] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [clipboard, setClipboard] = useState<CopyBundle | null>(null);
+  const [layoutDir, setLayoutDir] = useState<'down' | 'right'>('down');
+  const [showValidation, setShowValidation] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showUntraced, setShowUntraced] = useState(false);
+  const [views, setViews] = useState<View[]>([]);
+  const [currentViewId, setCurrentViewId] = useState<number | null>(null);
+  const [theme, setTheme] = useState<'light' | 'neon'>('light');
+
+  // 未追溯需求：没有「需求→元素」追溯链接的需求
+  const untracedReqs = useMemo(() => {
+    const linkedReqIds = new Set(traceLinks.filter((tr) => tr.fromType === 'requirement').map((tr) => tr.fromId));
+    return requirements.filter((r) => !linkedReqIds.has(r.id));
+  }, [requirements, traceLinks]);
+  // 轻量 Toast：非阻塞提示（替代 alert）
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<any>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
+
+  // ==== 撤销/重做 历史 ====
+  type PosSnap = Array<{ id: number; posX: number; posY: number }>;
+  type HistoryAction = { undo: () => Promise<void>; redo: () => Promise<void> };
+  const [history, setHistory] = useState<HistoryAction[]>([]);
+  const [future, setFuture] = useState<HistoryAction[]>([]);
+  const posBeforeRef = useRef<PosSnap | null>(null);
+  const snapPos = (): PosSnap => elements.map((e) => ({ id: e.id, posX: e.posX, posY: e.posY }));
+  const beforeMutate = () => { posBeforeRef.current = snapPos(); };
+  const pushHistory = (a: HistoryAction) => { setHistory((h) => [...h.slice(-49), a]); setFuture([]); };
+  const restorePos = async (snap: PosSnap) => {
+    await Promise.all(snap.map((p) => api.updateElement(p.id, { posX: p.posX, posY: p.posY })));
+    setElements((prev) => prev.map((e) => { const s = snap.find((x) => x.id === e.id); return s ? { ...e, posX: s.posX, posY: s.posY } : e; }));
+  };
+  const doUndo = async () => {
+    if (!history.length) { showToast('没有可撤销的操作'); return; }
+    const a = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setFuture((f) => [...f, a]);
+    await a.undo();
+    showToast('已撤销');
+  };
+  const doRedo = async () => {
+    if (!future.length) { showToast('没有可重做的操作'); return; }
+    const a = future[future.length - 1];
+    setFuture((f) => f.slice(0, -1));
+    setHistory((h) => [...h, a]);
+    await a.redo();
+    showToast('已重做');
+  };
+  const currentPayload = () => JSON.stringify(elements.map((e) => ({ elemId: e.id, x: e.posX, y: e.posY })));
+  const saveCurrentView = async () => {
+    const payload = currentPayload();
+    if (currentViewId) {
+      const v = await api.updateView(currentViewId, { payload });
+      setViews((prev) => prev.map((vv) => (vv.id === v.id ? v : vv)));
+      showToast('已保存当前视图');
+    } else {
+      const v = await api.createView(pid, { name: '视图 ' + (views.length + 1), payload });
+      setViews((prev) => [...prev, v]);
+      setCurrentViewId(v.id);
+      showToast('已保存为新视图');
+    }
+  };
+  const newView = async () => {
+    const name = '视图 ' + (views.length + 1);
+    const payload = currentPayload();
+    const v = await api.createView(pid, { name, payload });
+    setViews((prev) => [...prev, v]);
+    setCurrentViewId(v.id);
+    showToast(`已新建视图「${name}」`);
+  };
+  const switchView = async (id: number) => {
+    if (id === currentViewId) return;
+    // 切换前先把当前视图位置存回
+    if (currentViewId) {
+      try { await api.updateView(currentViewId, { payload: currentPayload() }); } catch { /* ignore */ }
+    }
+    const v = views.find((vv) => vv.id === id);
+    const positions: Array<{ elemId: number; x: number; y: number }> = v ? JSON.parse(v.payload || '[]') : [];
+    await restorePos(positions.map((p) => ({ id: p.elemId, posX: p.x, posY: p.y })));
+    setCurrentViewId(id);
+    showToast(`已切换「${v?.name ?? '视图'}」`);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      {toast && <div className="toast">{toast}</div>}
       <nav className="nav">
         <div className="nav-title">功能模块</div>
         <button className={view === 'canvas' ? 'active' : ''} onClick={() => setView('canvas')}>画布</button>
@@ -221,10 +545,57 @@ export default function ModelPage() {
               <strong>{project?.name || '…'}</strong>
               <div className="grow" />
               <span className="muted" style={{ fontSize: 12 }}>点元素上「展开」可查看内部，右键可添加/删除</span>
+              <span className="muted" style={{ fontSize: 12 }}>视图：</span>
+              <select
+                value={currentViewId ?? ''}
+                onChange={(e) => { const id = Number(e.target.value); if (id) switchView(id); }}
+                style={{ maxWidth: 150, fontSize: 12, padding: '5px 8px' }}
+              >
+                {views.length === 0 && <option value="">无视图</option>}
+                {views.map((v) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+              <button className="ghost sm" onClick={() => saveCurrentView()}>存为视图</button>
+              <button className="ghost sm" onClick={() => newView()}>+ 新建视图</button>
+              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setSearchTerm(''); }}
+                  placeholder="搜索元素 / 技术栈 / 类别…"
+                  style={{ width: 180, padding: '5px 26px 5px 9px', fontSize: 12 }}
+                />
+                {searchTerm ? (
+                  <button className="ghost sm" style={{ position: 'absolute', right: 2, top: 2, padding: '2px 5px', fontSize: 12 }} onClick={() => setSearchTerm('')}>✕</button>
+                ) : null}
+              </div>
+              <span className="pill" style={{ color: '#dc2626', borderColor: '#dc2626', background: '#fef2f2', fontSize: 11 }}>红线 = 系统消息未落到容器（缺失）</span>
               <button className="ghost sm" onClick={() => applyLayout()}>自动布局</button>
+              <button className={`ghost sm ${showTemplates ? 'active' : ''}`} onClick={() => setShowTemplates(!showTemplates)} style={{ position: 'relative' }}>
+                模板
+                {showTemplates && (
+                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 6, width: 240, fontSize: 12 }}>
+                    {TEMPLATES.map((t) => (
+                      <div key={t.id} className="menu-item" onClick={() => applyTemplate(t)}>
+                        <div style={{ fontWeight: 600 }}>{t.name}</div>
+                        <div className="muted" style={{ fontSize: 11 }}>{t.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </button>
+              <button className="ghost sm" disabled={!history.length} onClick={() => doUndo()}>↶ 撤销</button>
+              <button className="ghost sm" disabled={!future.length} onClick={() => doRedo()}>↷ 重做</button>
+              <button className="ghost sm" onClick={() => { const nd = layoutDir === 'down' ? 'right' : 'down'; setLayoutDir(nd); applyLayout(nd); }}>{layoutDir === 'down' ? '⇩ 上下布局' : '⇨ 左右布局'}</button>
               <button className="ghost sm" onClick={() => setExpanded(new Set(elements.filter((e) => hasChildren(e.id)).map((e) => e.id)))}>全部展开</button>
               <button className="ghost sm" onClick={() => setExpanded(new Set())}>全部收起</button>
               <button className={`ghost sm ${showTree ? 'active' : ''}`} onClick={() => setShowTree(!showTree)}>元素结构</button>
+              <button className={`ghost sm ${showLegend ? 'active' : ''}`} onClick={() => setShowLegend(!showLegend)}>图例</button>
+              <button className={`ghost sm ${theme === 'neon' ? 'active' : ''}`} onClick={() => setTheme((t) => (t === 'neon' ? 'light' : 'neon'))}>霓虹</button>
+              <button className={`ghost sm ${showValidation ? 'active' : ''}`} onClick={() => setShowValidation(!showValidation)}>校验 ({validation.length})</button>
+              <button className={`ghost sm ${showUntraced ? 'active' : ''}`} onClick={() => setShowUntraced(!showUntraced)}>未追溯 ({untracedReqs.length})</button>
+              <button className="ghost sm" disabled={!clipboard} onClick={() => pasteAsRoot()}>粘贴</button>
               <span style={{ width: 8 }} />
               <div className="adds">
                 {TYPES[1].map((t) => (
@@ -256,9 +627,14 @@ export default function ModelPage() {
               <div style={{ flex: 1, position: 'relative' }}>
                 <C4Canvas
                   elements={visibleElements}
-                  relationships={visibleRelationships}
+                  allElements={elements}
+                  allRelationships={relationships}
+                  overridePositions={displayPos}
                   contextIds={contextIds}
                   selectedId={selectedId}
+                  searchTerm={searchTerm}
+                  cycleEdges={cycleInfo.edges}
+                  theme={theme}
                   hasChildren={hasChildren}
                   onToggleExpand={expand}
                   onSelect={setSelectedId}
@@ -266,16 +642,115 @@ export default function ModelPage() {
                   onAddEdge={addEdge}
                   onMoveElement={moveElement}
                   onMoveElementCommit={commitElement}
+                  onMoveStart={beforeMutate}
                   addTypes={TYPES[1]}
-                  onAddType={(t) => addElement(t)}
+                  onAddType={(t, pos) => addElement(t, null, pos ? { posX: pos.x, posY: pos.y } : undefined)}
                   onAddChild={(id) => addChild(id)}
+                  onAddChildType={(id, item, pos) => addElementCategorized(id, item, pos)}
                   onDelete={async (id) => {
                     if (!window.confirm('确定删除该元素？其下所有子元素、关系与追溯都会被删除。')) return;
-                    await api.deleteElement(id);
-                    setSelectedId(null);
-                    reload();
+                    await deleteElementWithHistory(id);
                   }}
+                  onCopy={(id) => copySubtree(id)}
+                  onPasteChild={(id) => pasteAsChild(id)}
+                  onPasteRoot={() => pasteAsRoot()}
+                  hasClipboard={!!clipboard}
                 />
+                {breadcrumb.length > 0 && (
+                  <div className="crumb" style={{ position: 'absolute', top: 44, left: 12, zIndex: 10, background: 'rgba(255,255,255,.9)', border: '1px solid var(--border)', borderRadius: 999, padding: '4px 12px', fontSize: 12, boxShadow: 'var(--shadow)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {breadcrumb.map((b, i) => (
+                      <span key={b.id} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        {i > 0 && <span className="muted">/</span>}
+                        <a className="crumb-link" style={{ color: i === breadcrumb.length - 1 ? 'var(--text)' : '#2563eb', cursor: 'pointer', fontWeight: i === breadcrumb.length - 1 ? 700 : 500 }} onClick={() => setSelectedId(String(b.id))}>
+                          {b.name}
+                        </a>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {showUntraced && (
+                  <div style={{ position: 'absolute', top: 12, right: 272, zIndex: 10, background: 'rgba(255,255,255,.96)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 12, width: 250, fontSize: 12, maxHeight: '70vh', overflow: 'auto' }}>
+                    <div className="muted" style={{ fontWeight: 700, marginBottom: 6 }}>未追溯需求（未关联元素）</div>
+                    {untracedReqs.length === 0 ? (
+                      <div className="muted" style={{ fontSize: 12 }}>全部需求都已关联元素 ✅</div>
+                    ) : (
+                      untracedReqs.map((r) => (
+                        <div key={r.id} className="menu-item" style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }} onClick={() => { setView('req'); setShowUntraced(false); }}>
+                          <span className="muted" style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title || r.code}</span>
+                          <span className="pill warn" style={{ fontSize: 10 }}>{r.priority || '中'}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+                {showValidation && (
+                  <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, background: 'rgba(255,255,255,.96)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 12, width: 260, fontSize: 12, maxHeight: '70vh', overflow: 'auto' }}>
+                    <div className="muted" style={{ fontWeight: 700, marginBottom: 6 }}>校验：缺失的消息（红线）</div>
+                    {validation.length === 0 ? (
+                      <div className="muted" style={{ fontSize: 12 }}>当前没有缺失，所有系统消息都已落到叶子 ✅</div>
+                    ) : (
+                      validation.map((v, i) => (
+                        <div
+                          key={i}
+                          className="menu-item"
+                          style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}
+                          onClick={() => { setSelectedId(null); setSelectedEdgeId(String(v.relationshipId)); setView('canvas'); }}
+                        >
+                          <span className="muted" style={{ fontSize: 12 }}>{v.sName} → {v.tName}</span>
+                          <span className="pill warn" style={{ fontSize: 10 }}>{v.label}</span>
+                        </div>
+                      ))
+                    )}
+                    <div className="muted" style={{ fontWeight: 700, margin: '10px 0 6px' }}>循环依赖（橙）</div>
+                    {cycleInfo.cycles.length === 0 ? (
+                      <div className="muted" style={{ fontSize: 12 }}>未检测到循环依赖 ✅</div>
+                    ) : (
+                      cycleInfo.cycles.map((c, i) => (
+                        <div key={i} className="menu-item" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                          <span className="pill warn" style={{ fontSize: 10 }}>环</span>
+                          <span className="muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.map((id) => elements.find((e) => e.id === id)?.name ?? id).join(' → ')}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+                {showLegend && (
+                  <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, background: 'rgba(255,255,255,.96)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)', padding: 12, width: 230, fontSize: 12 }}>
+                    <div className="muted" style={{ fontWeight: 700, marginBottom: 6 }}>图例</div>
+                    <div className="muted" style={{ marginBottom: 4 }}>元素类别</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                      {CATEGORY_LIST.map((c) => (
+                        <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={c.label}>
+                          <span style={{ color: c.color }}>{c.icon}</span>
+                          <span className="muted" style={{ fontSize: 11 }}>{c.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="muted" style={{ margin: '8px 0 4px' }}>关系</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 22, height: 0, borderTop: '2px solid #94a3b8' }} /> <span className="muted" style={{ fontSize: 11 }}>同步（实线实心箭头）</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 22, height: 0, borderTop: '2px dashed #94a3b8' }} /> <span className="muted" style={{ fontSize: 11 }}>异步（虚线）</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 22, height: 0, borderTop: '2px solid #dc2626' }} /> <span className="muted" style={{ fontSize: 11 }}>红线 = 缺失（未落到叶子）</span>
+                      </div>
+                    </div>
+                    <div className="muted" style={{ margin: '8px 0 4px' }}>协议配色</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {([['#8b5cf6','gRPC'],['#f59e0b','Kafka/MQ'],['#0d9488','SQL'],['#2563eb','REST/HTTP'],['#dc2626','Redis']] as Array<[string,string]>).map(([c, l]) => (
+                        <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, background: c }} />
+                          <span className="muted" style={{ fontSize: 10 }}>{l}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {visibleElements.length === 0 && (
                   <div className="empty" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(255,255,255,.94)', borderRadius: 14, padding: '22px 30px', boxShadow: 'var(--shadow)', pointerEvents: 'none' }}>
                     <div className="big">🧭</div>
@@ -332,9 +807,7 @@ export default function ModelPage() {
                     }}
                     onDelete={async (eid) => {
                       if (!window.confirm('确定删除该元素？其下所有子元素、关系与追溯都会被删除。')) return;
-                      await api.deleteElement(eid);
-                      setSelectedId(null);
-                      reload();
+                      await deleteElementWithHistory(eid);
                     }}
                   />
                 )}
@@ -402,7 +875,20 @@ function Inspector({ element, onAiDesign, onSave, onDelete }: { element: Element
       <label>描述</label>
       <textarea rows={3} value={form.description} onChange={(e) => set('description', e.target.value)} />
       <label>技术栈</label>
-      <input value={form.technology} onChange={(e) => set('technology', e.target.value)} />
+      <ComboInput
+        value={form.technology}
+        options={TECH_PRESETS}
+        placeholder="选择或输入技术栈"
+        onChange={(v) => {
+          setForm((f) => {
+            if (!f) return f;
+            const cat = categoryForTech(v);
+            return cat && (f.category == null || f.category === '') ? { ...f, technology: v, category: cat } : { ...f, technology: v };
+          });
+        }}
+      />
+      <label>类别</label>
+      <input value={form.category ?? ''} placeholder="database / backend / frontend / queue / cache" onChange={(e) => set('category', e.target.value)} />
       <label>标签</label>
       <input value={form.tags} onChange={(e) => set('tags', e.target.value)} />
       <label>层级</label>
@@ -425,26 +911,77 @@ function Inspector({ element, onAiDesign, onSave, onDelete }: { element: Element
 // ---- 连线（关系）检查器 ----
 function EdgeInspector({ edge, elements, onSave, onDelete }: { edge: Relationship; elements: Element[]; onSave: (e: Relationship) => void; onDelete: (id: number) => void }) {
   const [form, setForm] = useState<Relationship | null>(null);
-  useEffect(() => setForm(edge), [edge]);
+  const [msgs, setMsgs] = useState<RelationshipMessage[]>([]);
+  useEffect(() => {
+    setForm(edge);
+    setMsgs(parseMessages(edge));
+  }, [edge]);
   if (!form)
     return <div style={{ padding: 20 }} className="muted">选中连接线后可编辑交互信息。</div>;
-  const set = (k: keyof Relationship, v: any) => setForm((f) => (f ? { ...f, [k]: v } : f));
   const nameOf = (id: number) => elements.find((e) => e.id === id)?.name || `#${id}`;
+  // 层级选择器：取 parent 下的所有「叶子」后代（无子级的容器/组件），label 带层级路径
+  const leafDescendants = (parentId: number): { id: number; label: string }[] => {
+    const out: { id: number; label: string }[] = [];
+    const walk = (pid: number, path: string[]) => {
+      (elements.filter((e) => e.parentId === pid)).forEach((c) => {
+        const hasKids = elements.some((e) => e.parentId === c.id);
+        if (hasKids) walk(c.id, [...path, c.name]);
+        else out.push({ id: c.id, label: [...path, c.name].join(' / ') });
+      });
+    };
+    walk(parentId, []);
+    return out;
+  };
+  const sourceLeaves = leafDescendants(form.sourceId);
+  const targetLeaves = leafDescendants(form.targetId);
+  const setMsg = (i: number, k: keyof RelationshipMessage, v: any) => setMsgs((m) => m.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const addMsg = () => setMsgs((m) => [...m, { name: '', protocol: '', senderId: null, receiverId: null }]);
+  const delMsg = (i: number) => setMsgs((m) => m.filter((_, j) => j !== i));
+  const save = () => {
+    const arr = msgs.map((x) => ({ name: x.name || '消息', protocol: x.protocol || '', senderId: x.senderId ?? null, receiverId: x.receiverId ?? null }));
+    const body = {
+      ...form,
+      interaction: arr[0]?.name ?? '',
+      label: arr[0]?.name ?? '',
+      protocol: arr[0]?.protocol ?? '',
+      sourceContainerId: arr[0]?.senderId ?? null,
+      targetContainerId: arr[0]?.receiverId ?? null,
+      messages: JSON.stringify(arr),
+    };
+    onSave(body);
+  };
   return (
     <div style={{ padding: 16 }}>
       <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
         {nameOf(form.sourceId)} → {nameOf(form.targetId)}
       </div>
-      <label>交互内容</label>
-      <input value={form.interaction} placeholder="如：下单、查询、发事件" onChange={(e) => set('interaction', e.target.value)} />
-      <label>通信协议</label>
-      <input value={form.protocol} placeholder="如：REST/HTTP、gRPC、MQ" onChange={(e) => set('protocol', e.target.value)} />
-      <label>补充说明</label>
-      <textarea rows={2} value={form.description} placeholder="可选" onChange={(e) => set('description', e.target.value)} />
-      <label>标签</label>
-      <input value={form.label} onChange={(e) => set('label', e.target.value)} />
+      <label>交互信息</label>
+      {msgs.map((m, i) => (
+        <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <ComboInput value={m.name} options={INTERACTION_PRESETS} onChange={(v) => setMsg(i, 'name', v)} placeholder="交互内容/消息名" width="100%" />
+            <button className="ghost sm" onClick={() => delMsg(i)}>✕</button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+            {sourceLeaves.length > 0 && (
+              <select value={m.senderId ?? ''} style={{ maxWidth: 200 }} onChange={(e) => setMsg(i, 'senderId', e.target.value === '' ? null : Number(e.target.value))}>
+                <option value="">发送端(未指定→红)</option>
+                {sourceLeaves.map((c) => <option key={c.id} value={c.id}>发·{c.label}</option>)}
+              </select>
+            )}
+            {targetLeaves.length > 0 && (
+              <select value={m.receiverId ?? ''} style={{ maxWidth: 200 }} onChange={(e) => setMsg(i, 'receiverId', e.target.value === '' ? null : Number(e.target.value))}>
+                <option value="">接收端(未指定→红)</option>
+                {targetLeaves.map((c) => <option key={c.id} value={c.id}>收·{c.label}</option>)}
+              </select>
+            )}
+            <ComboInput value={m.protocol} options={PROTOCOL_PRESETS} onChange={(v) => setMsg(i, 'protocol', v)} placeholder="协议" width={120} />
+          </div>
+        </div>
+      ))}
+      <button className="ghost sm" onClick={addMsg}>+ 添加消息</button>
       <div className="row" style={{ marginTop: 12 }}>
-        <button className="primary" onClick={() => onSave(form)}>保存</button>
+        <button className="primary" onClick={save}>保存</button>
         <button className="danger" onClick={() => onDelete(form.id)}>删除</button>
       </div>
     </div>

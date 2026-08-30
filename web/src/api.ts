@@ -8,6 +8,7 @@ import type {
   Requirement,
   TraceLink,
   TraceMatrixRow,
+  View,
 } from './types';
 
 const BASE = '/api';
@@ -32,6 +33,14 @@ export const updateProject = (id: number, p: Partial<Project>) =>
   request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(p) });
 export const deleteProject = (id: number) =>
   request<unknown>(`/projects/${id}`, { method: 'DELETE' });
+
+// ---- views ----
+export const listViews = (pid: number) => request<View[]>(`/projects/${pid}/views`);
+export const createView = (pid: number, v: { name: string; payload: string }) =>
+  request<View>(`/projects/${pid}/views`, { method: 'POST', body: JSON.stringify(v) });
+export const updateView = (id: number, v: { name?: string; payload?: string }) =>
+  request<View>(`/views/${id}`, { method: 'PUT', body: JSON.stringify(v) });
+export const deleteView = (id: number) => request<unknown>(`/views/${id}`, { method: 'DELETE' });
 
 // ---- elements ----
 export const listElements = (pid: number) => request<Element[]>(`/projects/${pid}/elements`);
