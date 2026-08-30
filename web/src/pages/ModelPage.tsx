@@ -4,7 +4,7 @@ import * as api from '../api';
 import C4Canvas from '../components/C4Canvas';
 import ElementTree from '../components/ElementTree';
 import ComboInput from '../components/ComboInput';
-import { minimalLayout, NODE_H, CHILD_MIN_X, CHILD_MIN_Y } from '../lib/geometry';
+import { minimalLayout, NODE_H, CHILD_MIN_X, CHILD_MIN_Y, gridChildPositions } from '../lib/geometry';
 import { graphLayout } from '../lib/layout';
 import { parseMessages, buildEdges } from '../lib/edges';
 import type { PaletteItem } from '../lib/palette';
@@ -163,9 +163,22 @@ export default function ModelPage() {
     setExpanded(n);
     // 展开时聚焦到父框+其子元素，让新内容就在眼前
     if (willExpand) {
-      const children = elements.filter((e) => e.parentId === id).map((e) => e.id);
-      focusCanvas([id, ...children]);
+      const children = elements.filter((e) => e.parentId === id);
+      focusCanvas([id, ...children.map((e) => e.id)]);
+      // 把父框内子元素排成居中网格（落库：一次性、可拖可撤销）
+      if (children.length) {
+        const parent = elements.find((e) => e.id === id);
+        if (parent) void gridChildren(parent, children);
+      }
     }
+  };
+
+  // 展开时把父框内子元素排成网格并持久化
+  const gridChildren = async (parent: Element, kids: Element[]) => {
+    const pos = gridChildPositions(parent, kids);
+    await Promise.all([...pos.entries()].map(([cid, p]) => api.updateElement(cid, { posX: p.x, posY: p.y })));
+    setElements((prev) => prev.map((e) => (pos.has(e.id) ? { ...e, posX: pos.get(e.id)!.x, posY: pos.get(e.id)!.y } : e)));
+    reload();
   };
 
   const hasChildren = useCallback((id: number) => elements.some((e) => e.parentId === id), [elements]);

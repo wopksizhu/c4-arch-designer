@@ -153,3 +153,25 @@ export function clampChildPos(
     y: Math.max(y, parent.posY + CHILD_MIN_Y),
   };
 }
+
+// 展开父框时：把其直接子元素排成一个「居中网格」（落库用）。返回 Map<childId,{x,y}>（绝对坐标）
+export function gridChildPositions(
+  parent: Element,
+  kids: Element[],
+): Map<number, { x: number; y: number }> {
+  const n = kids.length;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const colW = NODE_W;
+  const rowH = NODE_H;
+  const gap = 18;
+  // 父框左上角对齐 content：左右 PAD，顶部让出 header(CHILD_MIN_Y-一点)
+  const startX = parent.posX + PAD;
+  const startY = parent.posY + CHILD_MIN_Y - 8;
+  const out = new Map<number, { x: number; y: number }>();
+  kids.forEach((k, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    out.set(k.id, { x: startX + col * (colW + gap), y: startY + row * (rowH + gap) });
+  });
+  return out;
+}
