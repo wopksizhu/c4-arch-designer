@@ -116,22 +116,26 @@ function MessageEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
     <>
       {isNeon ? (
         <>
+          <defs>
+            <marker id={`${id}-arr`} markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill={data?.solid ? data?.solidColor : data?.targetColor || '#888'} />
+            </marker>
+            {!data?.solid && (
+              <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={data?.sourceColor || '#888'} />
+                <stop offset="100%" stopColor={data?.targetColor || '#888'} />
+              </linearGradient>
+            )}
+          </defs>
           <path
             d={path}
             fill="none"
             stroke={data?.solid ? data?.solidColor : `url(#${id}-grad)`}
             strokeWidth={2.2}
             strokeLinecap="round"
+            markerEnd={`url(#${id}-arr)`}
             style={{ filter: `drop-shadow(0 0 3px ${data?.solid ? data?.solidColor : data?.sourceColor || '#888'})` }}
           />
-          {!data?.solid && (
-            <defs>
-              <linearGradient id={`${id}-grad`} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor={data?.sourceColor || '#888'} />
-                <stop offset="100%" stopColor={data?.targetColor || '#888'} />
-              </linearGradient>
-            </defs>
-          )}
         </>
       ) : (
         <BaseEdge path={path} style={style} markerEnd={markerEnd} />
@@ -255,14 +259,14 @@ function C4Node({ data, id }: NodeProps<C4NodeType>) {
           {data?.description ? <div className="desc">{data.description}</div> : null}
         </>
       )}
-      <div className="c4-actions">
+      <div className="c4-actions nodrag">
         {data?.canExpand && (
-          <button className="c4-toggle" onClick={(e) => { e.stopPropagation(); expandHandler && expandHandler(Number(id)); }}>
-            {data.expanded ? '▾ 收起' : '▸ 展开'}
+          <button className="c4-toggle" title={data.expanded ? '收起' : '展开'} onClick={(e) => { e.stopPropagation(); e.preventDefault(); expandHandler && expandHandler(Number(id)); }}>
+            {data.expanded ? '▾' : '▸'}
           </button>
         )}
         {data?.canAdd && (
-          <button className="c4-drill" onClick={(e) => { e.stopPropagation(); addChildHandler && addChildHandler(Number(id)); }}>+ 添加子元素</button>
+          <button className="c4-drill" title="添加子元素" onClick={(e) => { e.stopPropagation(); e.preventDefault(); addChildHandler && addChildHandler(Number(id)); }}>＋</button>
         )}
       </div>
       <div className="c4-tip">
@@ -543,11 +547,11 @@ export default function C4Canvas({
       const t = elMap.get(d.targetId);
       if (!s || !t) return;
       const f = pairFan.get(d.id) || { index: 0, count: 1 };
-      const spread = f.count > 1 ? ((f.index - (f.count - 1) / 2) / f.count) * 0.9 : 0; // 同对多条：沿边错开
+      const spread = f.count > 1 ? ((f.index - (f.count - 1) / 2) / Math.max(f.count - 1, 1)) * 1.1 : 0; // 同对多条：沿边错开
       const se = computeExit(s.posX, s.posY, t.posX, t.posY, d.arc ? 'bottom' : undefined);
       const te = computeExit(t.posX, t.posY, s.posX, s.posY, d.arc ? 'top' : undefined);
-      ensure(d.sourceId).sources.push({ id: `s-${d.id}`, side: se.side, frac: Math.max(0.12, Math.min(0.88, se.frac + spread)) });
-      ensure(d.targetId).targets.push({ id: `t-${d.id}`, side: te.side, frac: Math.max(0.12, Math.min(0.88, te.frac + spread)) });
+      ensure(d.sourceId).sources.push({ id: `s-${d.id}`, side: se.side, frac: Math.max(0.1, Math.min(0.9, se.frac + spread)) });
+      ensure(d.targetId).targets.push({ id: `t-${d.id}`, side: te.side, frac: Math.max(0.1, Math.min(0.9, te.frac + spread)) });
     });
     return m;
   }, [edgeDrafts, elMap, pairFan]);
@@ -575,7 +579,7 @@ export default function C4Canvas({
       const baseColor = d.missing ? '#dc2626' : inCycle ? '#f59e0b' : linked ? '#2563eb' : protoColor || '#94a3b8';
       const asyncEdge = isAsync(d.label, d.protocol);
       const f = pairFan.get(d.id) || { index: 0, count: 1 };
-      const curvature = d.arc ? 0.3 : f.count > 1 ? (f.index % 2 === 0 ? 0.22 : 0.42) : 0.18;
+      const curvature = d.arc ? 0.25 : f.count > 1 ? 0.22 + f.index * 0.03 : 0.18;
       return {
         id: d.id,
         source: String(d.sourceId),

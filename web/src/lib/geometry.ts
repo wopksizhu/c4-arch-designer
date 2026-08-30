@@ -3,9 +3,9 @@ import type { Element } from '../types';
 // 基础尺寸
 export const NODE_W = 200;
 export const NODE_H = 100;
-export const PAD = 50; // 边界框内边距（right/down 由 computeExtent 决定）
-export const CHILD_MIN_X = 56; // 子元素距父框左侧的最小内缩
-export const CHILD_MIN_Y = 64; // 子元素距父框顶部的最小内缩（越过 header）
+export const PAD = 50; // 边界框四边统一留白（对称）
+export const CHILD_MIN_X = 50; // 子元素距父框左侧的最小内缩（= PAD，左=右 对称）
+export const CHILD_MIN_Y = 58; // 子元素距父框顶部的最小内缩（越过 header，上≈下）
 
 type Size = { w: number; h: number };
 

@@ -187,8 +187,9 @@ tbody tr:hover td { background: #f8fafc; }
 .c4-neon-title { color: #fff; font-weight: 700; font-size: 14px; line-height: 1.15; }
 .c4-neon-cat { font-size: 11px; font-weight: 700; text-transform: capitalize; letter-spacing: .02em; }
 .c4-neon-desc { font-size: 12px; color: #b9b7c6; }
-.c4-neon .c4-toggle, .c4-neon .c4-drill { background: #1a1724; color: #d9d7e6; border: 1px solid #2d2a3c; }
-.c4-neon .c4-toggle:hover, .c4-neon .c4-drill:hover { background: #24202f; }
+.c4-neon .c4-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 5px; z-index: 6; }
+.c4-neon .c4-toggle, .c4-neon .c4-drill { width: 22px; height: 22px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; border-radius: 7px; background: #1a1724; color: #d9d7e6; border: 1px solid #2d2a3c; cursor: pointer; }
+.c4-neon .c4-toggle:hover, .c4-neon .c4-drill:hover { background: #24202f; color: #fff; }
 .c4-neon .c4-tip { background: #151320; }
 .rf-neon { background: radial-gradient(circle 1.2px, rgba(255,255,255,.16) 1.2px, transparent 0) 0 0 / 24px 24px, #070608; }
 .rf-neon .react-flow__attribution { background: transparent; color: #555; }
@@ -197,9 +198,13 @@ tbody tr:hover td { background: #f8fafc; }
 .rf-neon .react-flow__controls-button { background: #151320; border-bottom: 1px solid #2a2737; fill: #d9d7e6; color: #d9d7e6; }
 .rf-neon .react-flow__minimap { background: #0b0a10; }
 .rf-neon .react-flow__minimap-mask { fill: rgba(0,0,0,.7); }
-.rf-neon .c4-boundary { background: transparent; border-color: rgba(255,255,255,.18) !important; }
-.rf-neon .c4-boundary-header { color: #ebe9f4; }
-.rf-neon .c4-boundary-name { color: #ebe9f4; }
+.rf-neon .c4-boundary { background: rgba(16,14,22,.35); border: 1.5px solid rgba(255,255,255,.16); border-radius: 18px; }
+.rf-neon .c4-boundary-header { color: #ebe9f4; font-size: 15px; }
+.rf-neon .c4-boundary-name { color: #ebe9f4; font-weight: 700; font-size: 15px; }
+.rf-neon .c4-boundary .c4-boundary-icon { font-size: 18px; }
+/* 选中框体高亮 */
+.react-flow__node.selected .c4-neon { outline: 2px solid rgba(167,139,250,.9); outline-offset: 3px; border-radius: 24px; }
+.react-flow__node.selected .c4-boundary { outline: 2px solid rgba(167,139,250,.9); outline-offset: 2px; border-color: rgba(167,139,250,.8) !important; }
 
 /* 元素结构树 */
 .tree { padding: 4px 0; font-size: 13px; }
